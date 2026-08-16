@@ -17,13 +17,14 @@ if os.environ.get("XDG_SESSION_TYPE") == "wayland" and "QT_QPA_PLATFORM" not in 
     os.environ["QT_QPA_PLATFORM"] = "xcb"
 
 from PyQt6.QtCore import QFileSystemWatcher, Qt, QTimer
-from PyQt6.QtGui import QColor, QIcon, QPainter, QPixmap
-from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
+from PyQt6.QtGui import QAction, QActionGroup, QColor, QIcon, QPainter, QPixmap
+from PyQt6.QtWidgets import QApplication, QInputDialog, QMenu, QSystemTrayIcon
 
 from config.constants import (
     APP_TITLE,
     BACKGROUND_COLOR,
     KEYMAP_PATH,
+    SETTINGS_PATH,
     TRAY_ICON_BAR_COLOR,
     TRAY_ICON_SIZE,
     rgb,
@@ -38,6 +39,24 @@ def load_keymap() -> dict:
             return json.load(f)
     except (OSError, json.JSONDecodeError):
         return {"characters": []}
+
+
+def load_settings() -> dict:
+    """Read settings.json; return an empty dict on failure."""
+    try:
+        with open(SETTINGS_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def save_settings(settings: dict) -> None:
+    """Persist settings to settings.json (best effort)."""
+    try:
+        with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=2)
+    except OSError:
+        pass
 
 
 def make_tray_icon() -> QIcon:
@@ -70,7 +89,12 @@ def main() -> int:
     # Keep the app alive in the tray even if the frameless window is closed.
     app.setQuitOnLastWindowClosed(False)
 
+    settings = load_settings()
+
     window = OverlayWindow(load_keymap())
+    saved_opacity = settings.get("opacity_percent")
+    if saved_opacity is not None:
+        window.set_opacity_percent(int(saved_opacity))
     window.show()
 
     # Some WMs ignore the stay-on-top hint; periodically raise the window to
@@ -98,6 +122,52 @@ def main() -> int:
     lock_action.triggered.connect(window.toggle_lock)
     window.lock_changed.connect(update_lock_text)
     update_lock_text(window.is_locked())
+
+    # Opacity submenu (plain actions render correctly in tray menus on Linux,
+    # unlike custom widgets such as sliders).
+    opacity_menu = menu.addMenu("Opacity")
+
+    opacity_group = QActionGroup(menu)
+    opacity_group.setExclusive(True)
+
+    opacity_presets = [100, 90, 80, 70, 60, 50, 40, 30]
+
+    def set_opacity(value: int) -> None:
+        window.set_opacity_percent(value)
+        settings["opacity_percent"] = value
+        save_settings(settings)
+        for action, preset in zip(opacity_actions, opacity_presets):
+            action.setChecked(preset == value)
+
+    opacity_actions = []
+    for preset in opacity_presets:
+        action = QAction(f"{preset}%", menu, checkable=True)
+        action.triggered.connect(
+            lambda checked=False, p=preset: set_opacity(p)
+        )
+        opacity_group.addAction(action)
+        opacity_menu.addAction(action)
+        opacity_actions.append(action)
+
+    opacity_menu.addSeparator()
+
+    custom_action = opacity_menu.addAction("Custom...")
+
+    def on_custom_opacity() -> None:
+        value, ok = QInputDialog.getInt(
+            None,
+            "Opacity",
+            "Opacity (%)",
+            window.opacity_percent(),
+            10,
+            100,
+        )
+        if ok:
+            set_opacity(value)
+
+    custom_action.triggered.connect(on_custom_opacity)
+
+    set_opacity(window.opacity_percent())
 
     menu.addSeparator()
     quit_action = menu.addAction("Quit")

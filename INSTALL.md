@@ -60,7 +60,7 @@ This produces `dist/KeymapOverlay` using PyInstaller. Keep the `data/` and
 - **Lock / click-through**: click the lock button (top-right). When locked,
   clicks pass through to the window behind; click the lock again (or use the
   tray menu) to unlock.
-- **Tray icon**: right-click to show/hide, lock/unlock, or quit.
+- **Tray icon**: right-click to show/hide, lock/unlock, change opacity, or quit.
 
 Edit `data/keymap.json` to change the hotkeys — the overlay reloads it
 automatically when the file is saved.

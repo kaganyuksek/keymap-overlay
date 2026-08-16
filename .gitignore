@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# App runtime settings (user-specific)
+data/settings.json
+

@@ -60,7 +60,8 @@ klasörlerini çalıştırılabilirin yanında bulundurmayı unutma.
 - **Kilitle / click-through**: Sağ üstteki kilit butonuna tıkla. Kilitliyken
   tıklamalar arkadaki pencereye geçer; kilidi açmak için tekrar tıkla (veya
   tepsi menüsünü kullan).
-- **Tepsi ikonu**: Göster/gizle, kilitle/kilit aç ve çıkış için sağ tıkla.
+- **Tepsi ikonu**: Göster/gizle, kilitle/kilit aç, opaklığı değiştir veya çıkış
+  için sağ tıkla.
 
 Hotkey'leri değiştirmek için `data/keymap.json` dosyasını düzenle — kaydedince
 overlay otomatik olarak yeniden yüklenir.

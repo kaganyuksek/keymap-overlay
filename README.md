@@ -13,7 +13,8 @@ Built with Python 3 and PyQt6.
 - **Lock / click-through mode** via the lock button in the top-right corner.
   When locked, clicks pass through the window (so the game/app behind it stays
   clickable) while the lock button itself remains usable to unlock.
-- System tray icon to show/hide, lock/unlock and quit.
+- System tray icon to show/hide, lock/unlock, adjust opacity and quit.
+- Adjustable background opacity, persisted in `data/settings.json`.
 - Multiple characters/groups loaded from `data/keymap.json`.
 - Hot-reloads `data/keymap.json` automatically when the file is saved.
 - Optional icons per hotkey (from `assets/icons/`).

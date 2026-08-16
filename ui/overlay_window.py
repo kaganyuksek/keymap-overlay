@@ -225,6 +225,7 @@ class OverlayWindow(QWidget):
         self.current_character = None
         self._locked = False
         self._drag_offset = None
+        self._background_alpha = BACKGROUND_ALPHA
 
         self._build_ui()
 
@@ -343,6 +344,16 @@ class OverlayWindow(QWidget):
     def toggle_lock(self) -> None:
         self.set_locked(not self._locked)
 
+    # --- Opacity -----------------------------------------------------------
+    def opacity_percent(self) -> int:
+        """Return the current background opacity as a 0-100 percentage."""
+        return round(self._background_alpha * 100 / 255)
+
+    def set_opacity_percent(self, percent: int) -> None:
+        """Set the background opacity from a 0-100 percentage."""
+        self._background_alpha = round(int(percent) * 255 / 100)
+        self.update()
+
     def _apply_click_through(self) -> None:
         """Make the window click-through when locked (except the lock button)."""
         if QGuiApplication.platformName() == "xcb":
@@ -428,7 +439,7 @@ class OverlayWindow(QWidget):
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setBrush(QColor(BACKGROUND_COLOR[0], BACKGROUND_COLOR[1], BACKGROUND_COLOR[2], BACKGROUND_ALPHA))
+        painter.setBrush(QColor(BACKGROUND_COLOR[0], BACKGROUND_COLOR[1], BACKGROUND_COLOR[2], self._background_alpha))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawRoundedRect(self.rect(), CORNER_RADIUS, CORNER_RADIUS)
         painter.end()
