@@ -19,6 +19,13 @@ Built with Python 3 and PyQt6.
 - Optional icons per hotkey (from `assets/icons/`).
 - All colors, sizes and spacing live in `config/constants.py` for easy tweaking.
 
+## Screenshot
+
+<img src="docs/screenshot.png" alt="Keymap Overlay" width="320">
+
+The panel shows the character dropdown (top), a group block with its hotkey
+rows, the drag handle (top-left) and the lock button (top-right).
+
 ## Quick start
 
 ```bash
