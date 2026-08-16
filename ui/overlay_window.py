@@ -261,6 +261,21 @@ class OverlayWindow(QWidget):
         if self.is_main:
             self.character_combo = QComboBox()
             self.character_combo.currentIndexChanged.connect(self.character_changed.emit)
+            self.character_combo.setStyleSheet(
+                "QComboBox {"
+                " background-color: rgb(45, 45, 55);"
+                " color: rgb(240, 240, 240);"
+                " border: 1px solid rgb(80, 80, 95);"
+                " border-radius: 4px;"
+                " padding: 2px 8px;"
+                "}"
+                "QComboBox::drop-down { border: none; }"
+                "QComboBox QAbstractItemView {"
+                " background-color: rgb(45, 45, 55);"
+                " color: rgb(240, 240, 240);"
+                " selection-background-color: rgb(70, 70, 90);"
+                "}"
+            )
             top_bar.addWidget(self.character_combo, stretch=1)
 
             self.add_button = self._make_icon_button("+", "New window")
