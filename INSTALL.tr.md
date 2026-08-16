@@ -64,4 +64,5 @@ klasörlerini çalıştırılabilirin yanında bulundurmayı unutma.
   için sağ tıkla.
 
 Hotkey'leri değiştirmek için `data/keymap.json` dosyasını düzenle — kaydedince
-overlay otomatik olarak yeniden yüklenir.
+overlay otomatik olarak yeniden yüklenir. İlk çalıştırmada bu dosya
+`data/keymap.example.json` üzerinden oluşturulur.

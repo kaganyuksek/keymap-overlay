@@ -219,4 +219,9 @@ __marimo__/
 
 # App runtime settings (user-specific)
 data/settings.json
+data/keymap.json
+
+# Plugins (user-provided importers)
+plugins/*
+!plugins/.gitkeep
 

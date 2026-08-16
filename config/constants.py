@@ -19,8 +19,10 @@ else:
     PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 KEYMAP_PATH = DATA_DIR / "keymap.json"
+KEYMAP_EXAMPLE_PATH = DATA_DIR / "keymap.example.json"
 SETTINGS_PATH = DATA_DIR / "settings.json"
 ICONS_DIR = PROJECT_ROOT / "assets" / "icons"
+PLUGINS_DIR = PROJECT_ROOT / "plugins"
 
 # --- Window ---------------------------------------------------------------
 WINDOW_WIDTH = 320

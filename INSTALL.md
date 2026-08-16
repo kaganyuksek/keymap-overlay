@@ -63,4 +63,5 @@ This produces `dist/KeymapOverlay` using PyInstaller. Keep the `data/` and
 - **Tray icon**: right-click to show/hide, lock/unlock, change opacity, or quit.
 
 Edit `data/keymap.json` to change the hotkeys — the overlay reloads it
-automatically when the file is saved.
+automatically when the file is saved. On first run the file is created from
+`data/keymap.example.json`.

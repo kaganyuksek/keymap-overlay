@@ -15,8 +15,10 @@ Built with Python 3 and PyQt6.
   clickable) while the lock button itself remains usable to unlock.
 - System tray icon to show/hide, lock/unlock, adjust opacity and quit.
 - Adjustable background opacity, persisted in `data/settings.json`.
-- Multiple characters/groups loaded from `data/keymap.json`.
+- Multiple characters/groups loaded from `data/keymap.json` (created from
+  `data/keymap.example.json` on first run).
 - Hot-reloads `data/keymap.json` automatically when the file is saved.
+- Plugin system: import hotkeys from external sources (see [PLUGINS.md](PLUGINS.md)).
 - Optional icons per hotkey (from `assets/icons/`).
 - All colors, sizes and spacing live in `config/constants.py` for easy tweaking.
 
@@ -41,7 +43,8 @@ See [INSTALL.md](INSTALL.md) for detailed setup instructions (and
 
 ## How it works
 
-The overlay reads its data from `data/keymap.json`:
+The overlay reads its data from `data/keymap.json`. On first run this file is
+created from the example at `data/keymap.example.json`:
 
 ```json
 {
@@ -73,19 +76,29 @@ The overlay reads its data from `data/keymap.json`:
 ```
 .
 ├── main.py                 # entry point (tray, watcher)
+├── plugin_loader.py        # plugin discovery
+├── PLUGINS.md              # plugin authoring guide
 ├── run.sh                  # run the app (auto-creates the venv)
 ├── build.sh                # build a single-file executable
 ├── config/
 │   └── constants.py        # all visual/size constants
 ├── data/
-│   └── keymap.json         # your hotkey data
+│   ├── keymap.example.json # example data (committed)
+│   └── keymap.json         # your hotkey data (generated, gitignored)
 ├── assets/
 │   └── icons/              # optional per-hotkey icons
+├── plugins/                # user-provided importers (gitignored)
 └── ui/
     ├── overlay_window.py   # frameless window, drag, lock, painting
     ├── group_widget.py     # one group block
     └── hotkey_row_widget.py# one hotkey row
 ```
+
+## Plugins
+
+Plugins let you generate the keymap from an external source (for example, a
+game's profile files). Drop a plugin into `plugins/` and it appears in the
+tray's **Import** menu. See [PLUGINS.md](PLUGINS.md) for the full API.
 
 ## Customizing
 

@@ -8,6 +8,7 @@ Keymap Overlay — entry point.
 
 import json
 import os
+import shutil
 import sys
 
 # Under a KDE/Wayland session Qt's "always-on-top" hint (WindowStaysOnTopHint)
@@ -23,6 +24,7 @@ from PyQt6.QtWidgets import QApplication, QInputDialog, QMenu, QSystemTrayIcon
 from config.constants import (
     APP_TITLE,
     BACKGROUND_COLOR,
+    KEYMAP_EXAMPLE_PATH,
     KEYMAP_PATH,
     SETTINGS_PATH,
     TRAY_ICON_BAR_COLOR,
@@ -30,6 +32,16 @@ from config.constants import (
     rgb,
 )
 from ui.overlay_window import OverlayWindow
+from plugin_loader import discover_plugins
+
+
+def ensure_keymap() -> None:
+    """Copy the example keymap to keymap.json on first run if it is missing."""
+    if not KEYMAP_PATH.exists() and KEYMAP_EXAMPLE_PATH.exists():
+        try:
+            shutil.copyfile(KEYMAP_EXAMPLE_PATH, KEYMAP_PATH)
+        except OSError:
+            pass
 
 
 def load_keymap() -> dict:
@@ -55,6 +67,17 @@ def save_settings(settings: dict) -> None:
     try:
         with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
             json.dump(settings, f, indent=2)
+    except OSError:
+        pass
+
+
+def write_keymap(data: dict) -> None:
+    """Write keymap.json atomically (best effort)."""
+    tmp = KEYMAP_PATH.with_suffix(".tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        os.replace(tmp, KEYMAP_PATH)
     except OSError:
         pass
 
@@ -91,6 +114,7 @@ def main() -> int:
 
     settings = load_settings()
 
+    ensure_keymap()
     window = OverlayWindow(load_keymap())
     saved_opacity = settings.get("opacity_percent")
     if saved_opacity is not None:
@@ -168,6 +192,44 @@ def main() -> int:
     custom_action.triggered.connect(on_custom_opacity)
 
     set_opacity(window.opacity_percent())
+
+    # Import submenu listing discovered plugins (kept out of the main window).
+    plugins = discover_plugins()
+
+    def run_import(plugin) -> None:
+        try:
+            data = plugin.import_keymap()
+        except Exception as exc:
+            tray.showMessage(
+                APP_TITLE,
+                f"Import failed: {exc}",
+                QSystemTrayIcon.MessageIcon.Warning,
+            )
+            return
+        if not isinstance(data, dict) or "characters" not in data:
+            tray.showMessage(
+                APP_TITLE,
+                "Import returned invalid data",
+                QSystemTrayIcon.MessageIcon.Warning,
+            )
+            return
+        write_keymap(data)
+        count = len(data.get("characters", []))
+        tray.showMessage(APP_TITLE, f"Imported {count} characters")
+
+    if plugins:
+        import_menu = menu.addMenu("Import")
+        for plugin in plugins:
+            name = getattr(plugin, "PLUGIN_NAME", plugin.PLUGIN_ID)
+            action = import_menu.addAction(name)
+            action.triggered.connect(
+                lambda checked=False, p=plugin: run_import(p)
+            )
+
+        # Plugins flagged with AUTO_IMPORT run once the event loop starts.
+        for plugin in plugins:
+            if getattr(plugin, "AUTO_IMPORT", False):
+                QTimer.singleShot(0, lambda p=plugin: run_import(p))
 
     menu.addSeparator()
     quit_action = menu.addAction("Quit")
