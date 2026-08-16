@@ -7,7 +7,8 @@ persists the layout. Lock state and opacity are global across all windows.
 
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
-from config.constants import WINDOW_POS_X, WINDOW_POS_Y
+import window_detector
+from config.constants import FOCUS_HIDE_DELAY_MS, WINDOW_POS_X, WINDOW_POS_Y
 from ui.overlay_window import OverlayWindow
 
 
@@ -25,6 +26,21 @@ class WindowManager(QObject):
         self.current_index = 0
         self._locked = False
         self._opacity = int(settings.get("opacity_percent", 90))
+        self._master_visible = True
+        self.checked_titles = set(settings.get("active_windows", []))
+        self._foreground_id = window_detector.foreground_id()
+        self._foreground_title = window_detector.foreground_title()
+
+        # Poll the foreground window to show/hide the overlay when a checked
+        # application is focused.
+        self._poll_timer = QTimer(self)
+        self._poll_timer.timeout.connect(self._poll_foreground)
+        self._poll_timer.start(500)
+
+        # Single-shot timer used to debounce the overlay hide.
+        self._hide_timer = QTimer(self)
+        self._hide_timer.setSingleShot(True)
+        self._hide_timer.timeout.connect(self._hide_due)
 
         self._main_window = self._create_window(is_main=True)
         self._build_all_windows()
@@ -70,9 +86,67 @@ class WindowManager(QObject):
         self._build_all_windows()
 
     def toggle_visibility(self) -> None:
-        visible = self._main_window.isVisible()
+        self._master_visible = not self._master_visible
+        self._refresh_visibility(immediate=True)
+
+    def is_window_title_checked(self, title: str) -> bool:
+        return title in self.checked_titles
+
+    def toggle_window_title(self, title: str) -> None:
+        if title in self.checked_titles:
+            self.checked_titles.discard(title)
+        else:
+            self.checked_titles.add(title)
+        self._save()
+        self._refresh_visibility(immediate=True)
+
+    def _poll_foreground(self) -> None:
+        fg_id = window_detector.foreground_id()
+        title = window_detector.foreground_title()
+        if fg_id != self._foreground_id or title != self._foreground_title:
+            self._foreground_id = fg_id
+            self._foreground_title = title
+            self._refresh_visibility()
+
+    def _own_window_ids(self) -> set:
+        return {int(w.winId()) for w in self.windows}
+
+    def _should_show(self) -> bool:
+        if not self._master_visible:
+            return False
+        if not self.checked_titles:
+            return True
+        fg_id = self._foreground_id
+        if fg_id is None:
+            # No active window (e.g. desktop) -> hide.
+            return False
+        if fg_id in self._own_window_ids():
+            # Our own overlay window is focused -> keep visible.
+            return True
+        if not self._foreground_title:
+            # A native Wayland window (sentinel id, no X11 title) is focused.
+            return False
+        return self._foreground_title in self.checked_titles
+
+    def _set_all_visible(self, visible: bool) -> None:
         for win in self.windows:
-            win.setVisible(not visible)
+            win.setVisible(visible)
+
+    def _refresh_visibility(self, immediate: bool = False) -> None:
+        if self._should_show():
+            self._hide_timer.stop()
+            self._set_all_visible(True)
+        elif immediate:
+            self._hide_timer.stop()
+            self._set_all_visible(False)
+        else:
+            # Debounce the hide to avoid flicker from transient focus changes.
+            if not self._hide_timer.isActive():
+                self._hide_timer.start(FOCUS_HIDE_DELAY_MS)
+
+    def _hide_due(self) -> None:
+        if not self._should_show():
+            self._set_all_visible(False)
 
     def raise_all(self) -> None:
         for win in self.windows:
@@ -148,6 +222,7 @@ class WindowManager(QObject):
             self._main_window.set_characters([], 0)
             for win in self.windows:
                 win.set_sections([])
+            self._refresh_visibility(immediate=True)
             return
         char = self.characters[self.current_index]
         layout, rows = self._reconcile(char)
@@ -159,9 +234,9 @@ class WindowManager(QObject):
             if i < len(layout):
                 win_rows = [row_map[rid] for rid in layout[i] if rid in row_map]
                 win.set_sections(self._group_rows(win_rows))
-                win.setVisible(True)
             else:
                 win.set_sections([])
+        self._refresh_visibility(immediate=True)
 
     # --- Helpers -----------------------------------------------------------
     def _rows_for_character(self, char: dict) -> list:
@@ -242,4 +317,5 @@ class WindowManager(QObject):
     def _save(self) -> None:
         if self.save_callback:
             self.settings["window_layout"] = self.layout
+            self.settings["active_windows"] = sorted(self.checked_titles)
             self.save_callback(self.settings)

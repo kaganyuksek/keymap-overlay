@@ -70,6 +70,7 @@ DRAG_HANDLE_COLOR = (120, 120, 140)
 EMPTY_WINDOW_MIN_ROWS = 3
 ROW_HEIGHT_ESTIMATE = 30
 ROW_MIME_TYPE = "application/x-keymap-row"
+FOCUS_HIDE_DELAY_MS = 800
 
 # --- System tray ----------------------------------------------------------
 APP_TITLE = "Keymap Overlay"

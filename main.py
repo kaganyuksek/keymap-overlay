@@ -31,6 +31,7 @@ from config.constants import (
     TRAY_ICON_SIZE,
     rgb,
 )
+import window_detector
 from window_manager import WindowManager
 from plugin_loader import discover_plugins
 
@@ -186,6 +187,27 @@ def main() -> int:
     custom_action.triggered.connect(on_custom_opacity)
 
     set_opacity(manager.opacity_percent())
+
+    # Sticky Overlay submenu: show the overlay only when a checked app is focused.
+    active_windows_menu = menu.addMenu("Sticky Overlay")
+
+    def rebuild_active_windows_menu() -> None:
+        active_windows_menu.clear()
+        windows = window_detector.list_windows()
+        if not windows:
+            action = active_windows_menu.addAction("No windows found")
+            action.setEnabled(False)
+            return
+        for w in windows:
+            title = w["title"]
+            action = active_windows_menu.addAction(title)
+            action.setCheckable(True)
+            action.setChecked(manager.is_window_title_checked(title))
+            action.triggered.connect(
+                lambda checked, t=title: manager.toggle_window_title(t)
+            )
+
+    active_windows_menu.aboutToShow.connect(rebuild_active_windows_menu)
 
     # Import submenu listing discovered plugins (kept out of the main window).
     plugins = discover_plugins()
