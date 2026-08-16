@@ -56,7 +56,9 @@ class HotkeyRowWidget(QWidget):
         key_font.setBold(True)
         key_label.setFont(key_font)
         key_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        key_label.setFixedWidth(ICON_SIZE * 2)
+        # Minimum width keeps short keys tidy; the badge grows for long keys
+        # (e.g. "Ctrl+Shift+F") so the text never clips.
+        key_label.setMinimumWidth(ICON_SIZE * 2)
         key_label.setStyleSheet(
             "background-color: {};"
             "color: {};"
