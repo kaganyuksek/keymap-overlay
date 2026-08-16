@@ -20,6 +20,10 @@ Built with Python 3 and PyQt6.
 - Multiple overlay windows: split hotkey rows across several windows with
   drag & drop. Each window auto-sizes to its content; the layout is persisted
   in `data/settings.json`.
+- **Sticky Overlay**: show the overlay only when a chosen application is focused
+  (pick apps from the tray's *Sticky Overlay* menu); hide it otherwise.
+- Window positions are remembered across restarts (with a tray action to reset
+  them to the center of the screen).
 - Hot-reloads `data/keymap.json` automatically when the file is saved.
 - Plugin system: import hotkeys from external sources (see [PLUGINS.md](PLUGINS.md)).
 - Optional icons per hotkey (from `assets/icons/`).

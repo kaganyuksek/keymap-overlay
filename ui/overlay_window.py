@@ -225,6 +225,7 @@ class OverlayWindow(QWidget):
     close_requested = pyqtSignal()
     row_dropped = pyqtSignal(str)
     lock_toggled = pyqtSignal(bool)
+    position_changed = pyqtSignal()
 
     def __init__(self, is_main: bool = True, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -429,6 +430,7 @@ class OverlayWindow(QWidget):
     def _end_drag(self) -> None:
         self._drag_offset = None
         self.releaseMouse()
+        self.position_changed.emit()
 
     def mouseMoveEvent(self, event) -> None:
         if self._drag_offset is not None and event.buttons() & Qt.MouseButton.LeftButton:

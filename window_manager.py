@@ -6,6 +6,7 @@ persists the layout. Lock state and opacity are global across all windows.
 """
 
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
+from PyQt6.QtGui import QGuiApplication
 
 import window_detector
 from config.constants import FOCUS_HIDE_DELAY_MS, WINDOW_POS_X, WINDOW_POS_Y
@@ -23,7 +24,9 @@ class WindowManager(QObject):
         self.save_callback = save_callback
         self.layout = settings.get("window_layout", {})
         self.windows = []
-        self.current_index = 0
+        self.current_index = self._find_character_index(
+            settings.get("selected_profile") or settings.get("selected_character")
+        )
         self._locked = False
         self._opacity = int(settings.get("opacity_percent", 90))
         self._master_visible = True
@@ -48,6 +51,7 @@ class WindowManager(QObject):
 
     # --- Window lifecycle --------------------------------------------------
     def _create_window(self, is_main: bool) -> OverlayWindow:
+        idx = 0 if is_main else len(self.windows)
         win = OverlayWindow(is_main=is_main)
         win.set_opacity_percent(self._opacity)
         win.set_locked(self._locked)
@@ -55,18 +59,27 @@ class WindowManager(QObject):
             win.character_changed.connect(self.set_character)
             win.create_window_requested.connect(self.create_window)
             win.lock_toggled.connect(self.set_locked)
+        else:
+            win.close_requested.connect(lambda w=win: self.close_window(w))
+        win.row_dropped.connect(lambda row_id, w=win: self.move_row(row_id, w))
+        win.position_changed.connect(self._on_window_moved)
+
+        if is_main:
             win.move(WINDOW_POS_X, WINDOW_POS_Y)
         else:
-            idx = len(self.windows)
-            win.close_requested.connect(lambda w=win: self.close_window(w))
             win.move(WINDOW_POS_X + idx * 40, WINDOW_POS_Y + idx * 40)
-        win.row_dropped.connect(lambda row_id, w=win: self.move_row(row_id, w))
+
         self.windows.append(win)
         win.show()
         return win
 
     def create_window(self) -> None:
         self._create_window(is_main=False)
+        # Register an (empty) slot for this window in the current profile so
+        # it becomes active/visible instead of being hidden.
+        if self.characters and 0 <= self.current_index < len(self.characters):
+            char_id = self.characters[self.current_index].get("id", "?")
+            self._layout_for_char(char_id).append([])
         self._build_all_windows()
         self._save()
 
@@ -128,9 +141,16 @@ class WindowManager(QObject):
             return False
         return self._foreground_title in self.checked_titles
 
+    def _active_window_count(self) -> int:
+        if not self.characters or self.current_index >= len(self.characters):
+            return 1
+        char_id = self.characters[self.current_index].get("id", "?")
+        return max(1, len(self.layout.get(char_id, [])))
+
     def _set_all_visible(self, visible: bool) -> None:
-        for win in self.windows:
-            win.setVisible(visible)
+        count = self._active_window_count()
+        for i, win in enumerate(self.windows):
+            win.setVisible(visible and i < count)
 
     def _refresh_visibility(self, immediate: bool = False) -> None:
         if self._should_show():
@@ -151,6 +171,41 @@ class WindowManager(QObject):
     def raise_all(self) -> None:
         for win in self.windows:
             win.raise_()
+
+    def _on_window_moved(self) -> None:
+        self._save()
+
+    def reset_positions(self) -> None:
+        """Center the overlay windows on the primary screen (recovery)."""
+        screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            return
+        geo = screen.availableGeometry()
+        for i, win in enumerate(self.windows):
+            x = geo.x() + (geo.width() - win.width()) // 2
+            y = geo.y() + (geo.height() - win.height()) // 2
+            win.move(x + i * 40, y + i * 40)
+        self.settings["window_positions"] = {}
+        self._save()
+
+    def _restore_positions(self) -> None:
+        if not self.characters or self.current_index >= len(self.characters):
+            return
+        char_id = self.characters[self.current_index].get("id", "?")
+        positions = self.settings.get("window_positions", {}).get(char_id, [])
+        for i, pos in enumerate(positions):
+            if i < len(self.windows):
+                self.windows[i].move(pos[0], pos[1])
+
+    def _save_positions(self) -> None:
+        if not self.characters or self.current_index >= len(self.characters):
+            return
+        char_id = self.characters[self.current_index].get("id", "?")
+        count = self._active_window_count()
+        positions = self.settings.setdefault("window_positions", {})
+        positions[char_id] = [
+            [w.pos().x(), w.pos().y()] for w in self.windows[:count]
+        ]
 
     # --- Lock / opacity (global) ------------------------------------------
     def is_locked(self) -> bool:
@@ -180,6 +235,7 @@ class WindowManager(QObject):
         if 0 <= index < len(self.characters):
             self.current_index = index
         self._build_all_windows()
+        self._save()
 
     def reload_keymap(self, keymap: dict) -> None:
         previous_id = None
@@ -187,11 +243,7 @@ class WindowManager(QObject):
             previous_id = self.characters[self.current_index].get("id")
         self.keymap = keymap
         self.characters = keymap.get("characters", [])
-        if previous_id:
-            for i, c in enumerate(self.characters):
-                if c.get("id") == previous_id:
-                    self.current_index = i
-                    break
+        self.current_index = self._find_character_index(previous_id)
         self._build_all_windows()
         self._prune_empty_windows()
         self._save()
@@ -202,6 +254,8 @@ class WindowManager(QObject):
         char_id = self.characters[self.current_index].get("id", "?")
         layout = self._layout_for_char(char_id)
         target_index = self.windows.index(target_win)
+        while len(layout) <= target_index:
+            layout.append([])
         source_index = None
         for i, win_ids in enumerate(layout):
             if row_id in win_ids:
@@ -234,11 +288,17 @@ class WindowManager(QObject):
             if i < len(layout):
                 win_rows = [row_map[rid] for rid in layout[i] if rid in row_map]
                 win.set_sections(self._group_rows(win_rows))
-            else:
-                win.set_sections([])
+        self._restore_positions()
         self._refresh_visibility(immediate=True)
 
     # --- Helpers -----------------------------------------------------------
+    def _find_character_index(self, char_id) -> int:
+        if char_id:
+            for i, c in enumerate(self.characters):
+                if c.get("id") == char_id:
+                    return i
+        return 0
+
     def _rows_for_character(self, char: dict) -> list:
         rows = []
         char_id = char.get("id", "?")
@@ -258,11 +318,8 @@ class WindowManager(QObject):
 
     def _layout_for_char(self, char_id: str) -> list:
         if char_id not in self.layout:
-            self.layout[char_id] = [[] for _ in self.windows]
-        layout = self.layout[char_id]
-        while len(layout) < len(self.windows):
-            layout.append([])
-        return layout
+            self.layout[char_id] = [[]]
+        return self.layout[char_id]
 
     def _reconcile(self, char: dict) -> tuple[list, list]:
         char_id = char.get("id", "?")
@@ -318,4 +375,9 @@ class WindowManager(QObject):
         if self.save_callback:
             self.settings["window_layout"] = self.layout
             self.settings["active_windows"] = sorted(self.checked_titles)
+            self._save_positions()
+            if self.characters and 0 <= self.current_index < len(self.characters):
+                self.settings["selected_profile"] = (
+                    self.characters[self.current_index].get("id")
+                )
             self.save_callback(self.settings)

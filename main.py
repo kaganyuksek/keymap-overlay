@@ -261,6 +261,9 @@ def main() -> int:
                     0, lambda pid=plugin.PLUGIN_ID: run_import(pid)
                 )
 
+    reset_action = menu.addAction("Reset overlay location")
+    reset_action.triggered.connect(manager.reset_positions)
+
     menu.addSeparator()
     quit_action = menu.addAction("Quit")
     quit_action.triggered.connect(app.quit)
