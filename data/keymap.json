@@ -1,0 +1,53 @@
+{
+  "characters": [
+    {
+      "id": "char1",
+      "name": "Character 1",
+      "groups": [
+        {
+          "title": "Combat",
+          "hotkeys": [
+            { "key": "F1", "label": "Attack", "icon": "attack.png" },
+            { "key": "F2", "label": "Defend", "icon": null },
+            { "key": "F3", "label": "Special attack", "icon": null }
+          ]
+        },
+        {
+          "title": "Movement",
+          "hotkeys": [
+            { "key": "F4", "label": "Run", "icon": "run.png" },
+            { "key": "F5", "label": "Jump", "icon": null }
+          ]
+        },
+        {
+          "title": "Items",
+          "hotkeys": [
+            { "key": "F6", "label": "Health potion", "icon": "potion.png" },
+            { "key": "F7", "label": "Mana potion", "icon": null }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "char2",
+      "name": "Character 2",
+      "groups": [
+        {
+          "title": "Spells",
+          "hotkeys": [
+            { "key": "F1", "label": "Fireball", "icon": "fireball.png" },
+            { "key": "F2", "label": "Heal", "icon": null },
+            { "key": "F3", "label": "Teleport", "icon": null }
+          ]
+        },
+        {
+          "title": "Utility",
+          "hotkeys": [
+            { "key": "F4", "label": "Open map", "icon": "map.png" },
+            { "key": "F5", "label": "Open inventory", "icon": null }
+          ]
+        }
+      ]
+    }
+  ]
+}
