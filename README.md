@@ -107,8 +107,10 @@ spacing and icon size. Nothing is hardcoded elsewhere.
 
 ## Notes
 
+- Cross-platform: works on Linux (X11/XWayland) and Windows.
 - On Linux/Wayland the app forces the XWayland (xcb) backend so the
-  always-on-top behavior works reliably. Click-through is implemented via the
-  X11 `ShapeInput` extension.
+  always-on-top behavior works reliably; click-through is implemented via the
+  X11 `ShapeInput` extension. On Windows, click-through falls back to Qt's
+  native `WA_TransparentForMouseEvents`.
 - Tested on Fedora (KDE/Wayland). Should also work on other Linux desktop
   environments with an X11/XWayland session.
