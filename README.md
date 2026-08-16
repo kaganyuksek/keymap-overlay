@@ -27,10 +27,12 @@ Built with Python 3 and PyQt6.
 
 ## Screenshot
 
-<img src="docs/screenshot.png" alt="Keymap Overlay" width="320">
+<img src="docs/screenshot.png" alt="Keymap Overlay" width="520">
 
-The panel shows the character dropdown (top), a group block with its hotkey
-rows, the drag handle (top-left) and the lock button (top-right).
+The main window (left) shows the character dropdown, the lock button and the
+"+ new window" button; hotkey rows can be dragged into extra windows (right).
+Each window auto-sizes to its content and has a move handle (top-left) to
+reposition it.
 
 ## Quick start
 
