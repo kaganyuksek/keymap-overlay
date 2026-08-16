@@ -17,6 +17,9 @@ Built with Python 3 and PyQt6.
 - Adjustable background opacity, persisted in `data/settings.json`.
 - Multiple characters/groups loaded from `data/keymap.json` (created from
   `data/keymap.example.json` on first run).
+- Multiple overlay windows: split hotkey rows across several windows with
+  drag & drop. Each window auto-sizes to its content; the layout is persisted
+  in `data/settings.json`.
 - Hot-reloads `data/keymap.json` automatically when the file is saved.
 - Plugin system: import hotkeys from external sources (see [PLUGINS.md](PLUGINS.md)).
 - Optional icons per hotkey (from `assets/icons/`).

@@ -4,11 +4,12 @@ Widget representing a single hotkey row.
 A row looks like: [icon] [F1] Description
 - If the icon is null in JSON (or the file is missing) the icon is omitted
   with no gap left; only the key badge + description remain.
+- A row can be dragged to move it between overlay windows (drag & drop).
 """
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QPixmap
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QWidget
+from PyQt6.QtCore import QMimeData, Qt
+from PyQt6.QtGui import QDrag, QFont, QPixmap
+from PyQt6.QtWidgets import QApplication, QHBoxLayout, QLabel, QWidget
 
 from config.constants import (
     FONT_FAMILY,
@@ -19,14 +20,17 @@ from config.constants import (
     ICONS_DIR,
     KEY_BADGE_BG,
     KEY_BADGE_TEXT_COLOR,
+    ROW_MIME_TYPE,
     TEXT_COLOR,
     rgb,
 )
 
 
 class HotkeyRowWidget(QWidget):
-    def __init__(self, hotkey: dict, parent: QWidget | None = None) -> None:
+    def __init__(self, hotkey: dict, row_id: str | None = None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._row_id = row_id if row_id is not None else hotkey.get("id")
+        self._press_pos = None
         self._build(hotkey)
 
     def _build(self, hotkey: dict) -> None:
@@ -73,3 +77,34 @@ class HotkeyRowWidget(QWidget):
         desc_label.setStyleSheet("color: {};".format(rgb(TEXT_COLOR)))
         desc_label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         layout.addWidget(desc_label, stretch=1)
+
+    # --- Drag & drop (source) ---------------------------------------------
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._press_pos = event.position().toPoint()
+        event.accept()
+
+    def mouseMoveEvent(self, event) -> None:
+        if (
+            self._press_pos is not None
+            and event.buttons() & Qt.MouseButton.LeftButton
+            and self._row_id is not None
+        ):
+            if (
+                event.position().toPoint() - self._press_pos
+            ).manhattanLength() >= QApplication.startDragDistance():
+                self._start_drag()
+                return
+        event.accept()
+
+    def mouseReleaseEvent(self, event) -> None:
+        self._press_pos = None
+        event.accept()
+
+    def _start_drag(self) -> None:
+        drag = QDrag(self)
+        mime = QMimeData()
+        mime.setData(ROW_MIME_TYPE, self._row_id.encode("utf-8"))
+        drag.setMimeData(mime)
+        drag.exec(Qt.DropAction.MoveAction)
+        self._press_pos = None

@@ -31,7 +31,7 @@ from config.constants import (
     TRAY_ICON_SIZE,
     rgb,
 )
-from ui.overlay_window import OverlayWindow
+from window_manager import WindowManager
 from plugin_loader import discover_plugins
 
 
@@ -115,16 +115,12 @@ def main() -> int:
     settings = load_settings()
 
     ensure_keymap()
-    window = OverlayWindow(load_keymap())
-    saved_opacity = settings.get("opacity_percent")
-    if saved_opacity is not None:
-        window.set_opacity_percent(int(saved_opacity))
-    window.show()
+    manager = WindowManager(load_keymap(), settings, save_callback=save_settings)
 
-    # Some WMs ignore the stay-on-top hint; periodically raise the window to
+    # Some WMs ignore the stay-on-top hint; periodically raise the windows to
     # guarantee the overlay stays on top.
     keep_on_top = QTimer()
-    keep_on_top.timeout.connect(window.raise_)
+    keep_on_top.timeout.connect(manager.raise_all)
     keep_on_top.start(2000)
 
     # --- System tray -------------------------------------------------------
@@ -134,9 +130,7 @@ def main() -> int:
     menu = QMenu()
 
     show_action = menu.addAction("Show / Hide")
-    show_action.triggered.connect(
-        lambda checked=False: window.setVisible(not window.isVisible())
-    )
+    show_action.triggered.connect(manager.toggle_visibility)
 
     lock_action = menu.addAction("Lock (click-through)")
 
@@ -145,9 +139,9 @@ def main() -> int:
             "Unlock (normal mode)" if locked else "Lock (click-through)"
         )
 
-    lock_action.triggered.connect(window.toggle_lock)
-    window.lock_changed.connect(update_lock_text)
-    update_lock_text(window.is_locked())
+    lock_action.triggered.connect(manager.toggle_lock)
+    manager.lock_changed.connect(update_lock_text)
+    update_lock_text(manager.is_locked())
 
     # Opacity submenu (plain actions render correctly in tray menus on Linux,
     # unlike custom widgets such as sliders).
@@ -159,9 +153,7 @@ def main() -> int:
     opacity_presets = [100, 90, 80, 70, 60, 50, 40, 30]
 
     def set_opacity(value: int) -> None:
-        window.set_opacity_percent(value)
-        settings["opacity_percent"] = value
-        save_settings(settings)
+        manager.set_opacity_percent(value)
         for action, preset in zip(opacity_actions, opacity_presets):
             action.setChecked(preset == value)
 
@@ -184,7 +176,7 @@ def main() -> int:
             None,
             "Opacity",
             "Opacity (%)",
-            window.opacity_percent(),
+            manager.opacity_percent(),
             10,
             100,
         )
@@ -193,7 +185,7 @@ def main() -> int:
 
     custom_action.triggered.connect(on_custom_opacity)
 
-    set_opacity(window.opacity_percent())
+    set_opacity(manager.opacity_percent())
 
     # Import submenu listing discovered plugins (kept out of the main window).
     plugins = discover_plugins()
@@ -255,7 +247,7 @@ def main() -> int:
     # Left click toggles the window visibility.
     tray.activated.connect(
         lambda reason: (
-            window.setVisible(not window.isVisible())
+            manager.toggle_visibility()
             if reason == QSystemTrayIcon.ActivationReason.Trigger
             else None
         )
@@ -267,7 +259,7 @@ def main() -> int:
     watcher.addPath(str(KEYMAP_PATH))
 
     def on_file_changed(path: str) -> None:
-        window.reload_keymap(load_keymap())
+        manager.reload_keymap(load_keymap())
         # Editors may save atomically (rename); refresh the watch.
         watcher.addPath(str(KEYMAP_PATH))
 

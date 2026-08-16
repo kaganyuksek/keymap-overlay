@@ -1,23 +1,25 @@
 """
-Main overlay window.
+Overlay window.
 
 - Frameless, always-on-top, semi-transparent background (rounded rect drawn in paintEvent).
 - Dragging is done from the "move" handle in the top-left corner.
 - "Locked/click-through" mode: on X11 the window input region is restricted to the
-  lock button, so the rest of the window passes clicks through while the lock
-  button always remains clickable.
-- Character selector at the top (when there are multiple characters) and a lock button.
+  lock button (main window) so the rest of the window passes clicks through while
+  the lock button always remains clickable. Extra windows become fully click-through.
+- The main window holds the character selector, the lock button and a "+" button
+  to create extra windows; extra windows hold a close button.
+- Content is a set of (group title, rows) sections; the window auto-sizes to its
+  content (grows downward) instead of scrolling.
 """
 
 import ctypes
 
-from PyQt6.QtCore import QPoint, QPointF, Qt, pyqtSignal
+from PyQt6.QtCore import QPoint, QPointF, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QGuiApplication, QPainter, QPen, QPolygonF
 from PyQt6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
-    QLabel,
-    QScrollArea,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -28,12 +30,13 @@ from config.constants import (
     CORNER_RADIUS,
     DRAG_HANDLE_COLOR,
     DRAG_HANDLE_SIZE,
-    FONT_FAMILY,
-    FONT_SIZE_TITLE,
+    EMPTY_WINDOW_MIN_ROWS,
     GROUP_SPACING,
     LOCK_BUTTON_SIZE,
     LOCKED_COLOR,
     PANEL_PADDING,
+    ROW_HEIGHT_ESTIMATE,
+    ROW_MIME_TYPE,
     TEXT_COLOR,
     UNLOCKED_COLOR,
     WINDOW_HEIGHT,
@@ -48,8 +51,7 @@ from ui.group_widget import GroupWidget
 # --- X11 click-through helpers --------------------------------------------
 # WA_TransparentForMouseEvents is not reliable under XWayland. Instead we set
 # the window input region directly via X11 ShapeInput. In locked mode the input
-# region is only the lock button, so the button stays clickable while the rest
-# of the window passes clicks through.
+# region is only the lock button (main window) or empty (extra windows).
 
 class _XRectangle(ctypes.Structure):
     _fields_ = [
@@ -99,15 +101,17 @@ def _x11_ready() -> bool:
         return False
 
 
-def _set_input_shape(win_id: int, rect) -> None:
-    """Restrict the window input region to a single rectangle (X11)."""
+def _set_input_shape(win_id: int, rects) -> None:
+    """Set the window input region to the given rectangles (X11)."""
     if not _x11_ready():
         return
-    x, y, w, h = rect
-    rect = _XRectangle(x, y, w, h)
-    arr = (_XRectangle * 1)(rect)
+    n = len(rects)
+    arr = (_XRectangle * max(1, n))()
+    for i, rect in enumerate(rects):
+        x, y, w, h = rect
+        arr[i] = _XRectangle(x, y, w, h)
     _x11["xshape"].XShapeCombineRectangles(
-        _x11["dpy"], win_id, _SHAPE_INPUT, 0, 0, arr, 1, _SHAPE_SET, _UNSORTED
+        _x11["dpy"], win_id, _SHAPE_INPUT, 0, 0, arr, n, _SHAPE_SET, _UNSORTED
     )
     _x11["xlib"].XFlush(_x11["dpy"])
 
@@ -216,13 +220,15 @@ class DragHandle(QWidget):
 class OverlayWindow(QWidget):
     """Frameless, draggable, semi-transparent hotkey reference panel."""
 
-    lock_changed = pyqtSignal(bool)
+    character_changed = pyqtSignal(int)
+    create_window_requested = pyqtSignal()
+    close_requested = pyqtSignal()
+    row_dropped = pyqtSignal(str)
+    lock_toggled = pyqtSignal(bool)
 
-    def __init__(self, keymap: dict, parent: QWidget | None = None) -> None:
+    def __init__(self, is_main: bool = True, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.keymap = keymap
-        self.characters = keymap.get("characters", [])
-        self.current_character = None
+        self.is_main = is_main
         self._locked = False
         self._drag_offset = None
         self._background_alpha = BACKGROUND_ALPHA
@@ -233,6 +239,7 @@ class OverlayWindow(QWidget):
             Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAcceptDrops(True)
         self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
         self.move(WINDOW_POS_X, WINDOW_POS_Y)
 
@@ -244,113 +251,104 @@ class OverlayWindow(QWidget):
         )
         outer.setSpacing(GROUP_SPACING)
 
-        # Top bar: character selector + drag handle + lock button
         top_bar = QHBoxLayout()
         top_bar.setSpacing(GROUP_SPACING)
 
-        self.character_combo = QComboBox()
-        self.character_combo.addItems([c.get("name", "?") for c in self.characters])
-        self.character_combo.currentIndexChanged.connect(self._on_character_changed)
-
-        self.title_label = QLabel()
-        self.title_label.setFont(self._title_font())
-        self.title_label.setStyleSheet("color: {};".format(rgb(TEXT_COLOR)))
-
-        # Both the dropdown and the title label are added; their visibility is
-        # switched based on the character count (it can change on reload).
         self.drag_handle = DragHandle()
         self.drag_handle.drag_started.connect(self._start_drag)
         top_bar.addWidget(self.drag_handle, alignment=Qt.AlignmentFlag.AlignLeft)
 
-        top_bar.addWidget(self.character_combo, stretch=1)
-        top_bar.addWidget(self.title_label, stretch=1)
+        if self.is_main:
+            self.character_combo = QComboBox()
+            self.character_combo.currentIndexChanged.connect(self.character_changed.emit)
+            top_bar.addWidget(self.character_combo, stretch=1)
 
-        self.lock_button = LockButton()
-        self.lock_button.clicked.connect(self.toggle_lock)
-        top_bar.addWidget(self.lock_button, alignment=Qt.AlignmentFlag.AlignRight)
+            self.add_button = self._make_icon_button("+", "New window")
+            self.add_button.clicked.connect(self.create_window_requested.emit)
+            top_bar.addWidget(self.add_button, alignment=Qt.AlignmentFlag.AlignRight)
+
+            self.lock_button = LockButton()
+            self.lock_button.clicked.connect(self._on_lock_clicked)
+            top_bar.addWidget(self.lock_button, alignment=Qt.AlignmentFlag.AlignRight)
+        else:
+            top_bar.addStretch(1)
+            self.close_button = self._make_icon_button("\u00d7", "Close window")
+            self.close_button.clicked.connect(self.close_requested.emit)
+            top_bar.addWidget(self.close_button, alignment=Qt.AlignmentFlag.AlignRight)
+
         outer.addLayout(top_bar)
+        self.top_bar_layout = top_bar
 
-        # Scroll area holding the groups
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        self.scroll.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
-        self._set_transparent(self.scroll)
-        self._set_transparent(self.scroll.viewport())
-
-        self.content = QWidget()
-        self._set_transparent(self.content)
-        self.content_layout = QVBoxLayout(self.content)
+        self.content_layout = QVBoxLayout()
         self.content_layout.setContentsMargins(0, 0, 0, 0)
         self.content_layout.setSpacing(GROUP_SPACING)
-        self.content_layout.addStretch(1)
-        self.scroll.setWidget(self.content)
-        outer.addWidget(self.scroll)
+        outer.addLayout(self.content_layout, stretch=1)
 
-        # Select the first character
-        self._set_selector_mode()
-        self._on_character_changed(0)
+    def _make_icon_button(self, text: str, tooltip: str) -> QToolButton:
+        button = QToolButton()
+        button.setText(text)
+        button.setFixedSize(LOCK_BUTTON_SIZE, LOCK_BUTTON_SIZE)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.setToolTip(tooltip)
+        button.setStyleSheet(
+            "color: {}; background: transparent; border: none;"
+            "font-size: 14px; font-weight: bold;".format(rgb(TEXT_COLOR))
+        )
+        return button
 
-    def _set_selector_mode(self) -> None:
-        use_combo = len(self.characters) > 1
-        self.character_combo.setVisible(use_combo)
-        self.title_label.setVisible(not use_combo)
-
-    @staticmethod
-    def _title_font():
-        from PyQt6.QtGui import QFont
-
-        font = QFont(FONT_FAMILY, FONT_SIZE_TITLE)
-        font.setBold(True)
-        return font
-
-    @staticmethod
-    def _set_transparent(widget: QWidget) -> None:
-        widget.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        widget.setStyleSheet("background: transparent;")
-
-    def _clear_groups(self) -> None:
-        # Clear the group widgets from content_layout (except the stretch).
-        while self.content_layout.count() > 1:
+    # --- Content -----------------------------------------------------------
+    def set_sections(self, sections) -> None:
+        """Render the given (group title, rows) sections and auto-size."""
+        while self.content_layout.count():
             item = self.content_layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
                 widget.deleteLater()
+        for title, rows in sections:
+            self.content_layout.addWidget(GroupWidget(title, rows))
+        self.content_layout.addStretch(1)
+        # Defer so the widgets are polished and size hints are correct.
+        QTimer.singleShot(0, self._autosize)
 
-    def _on_character_changed(self, index: int) -> None:
-        if not self.characters or index < 0 or index >= len(self.characters):
+    def set_characters(self, names, current_index: int) -> None:
+        """Update the character selector (main window only)."""
+        if not self.is_main:
             return
-        self.current_character = self.characters[index]
-        self.title_label.setText(self.current_character.get("name", ""))
-        self._clear_groups()
-        for group in self.current_character.get("groups", []):
-            self.content_layout.insertWidget(
-                self.content_layout.count() - 1,
-                GroupWidget(group.get("title", ""), group.get("hotkeys", [])),
-            )
+        self.character_combo.blockSignals(True)
+        self.character_combo.clear()
+        self.character_combo.addItems(names)
+        self.character_combo.setCurrentIndex(current_index)
+        self.character_combo.blockSignals(False)
+
+    def _autosize(self) -> None:
+        self.layout().activate()
+        height = self.sizeHint().height()
+        top_h = self.top_bar_layout.sizeHint().height()
+        min_content = EMPTY_WINDOW_MIN_ROWS * ROW_HEIGHT_ESTIMATE
+        min_height = PANEL_PADDING * 2 + top_h + GROUP_SPACING + min_content
+        self.resize(WINDOW_WIDTH, max(height, min_height))
 
     # --- Lock / click-through ----------------------------------------------
     def is_locked(self) -> bool:
         return self._locked
 
+    def _on_lock_clicked(self) -> None:
+        self.lock_toggled.emit(not self._locked)
+
     def set_locked(self, locked: bool) -> None:
         self._locked = locked
-        self.lock_button.set_locked(locked)
+        if self.is_main:
+            self.lock_button.set_locked(locked)
         self._apply_click_through()
-        self.lock_changed.emit(locked)
 
     def toggle_lock(self) -> None:
         self.set_locked(not self._locked)
 
     # --- Opacity -----------------------------------------------------------
     def opacity_percent(self) -> int:
-        """Return the current background opacity as a 0-100 percentage."""
         return round(self._background_alpha * 100 / 255)
 
     def set_opacity_percent(self, percent: int) -> None:
-        """Set the background opacity from a 0-100 percentage."""
         self._background_alpha = round(int(percent) * 255 / 100)
         self.update()
 
@@ -360,12 +358,16 @@ class OverlayWindow(QWidget):
             win_id = int(self.winId())
             if win_id:
                 if self._locked:
-                    # Input region = lock button only (in window coordinates)
-                    rect = self.lock_button.geometry().getRect()
+                    if self.is_main:
+                        # Input region = lock button only (window coordinates)
+                        rects = [self.lock_button.geometry().getRect()]
+                    else:
+                        # Extra windows are fully click-through when locked
+                        rects = []
                 else:
                     # Input region = whole window
-                    rect = (0, 0, self.width(), self.height())
-                _set_input_shape(win_id, rect)
+                    rects = [(0, 0, self.width(), self.height())]
+                _set_input_shape(win_id, rects)
                 return
         # Fall back to the classic Qt behavior when X11/XShape is unavailable.
         self.setAttribute(
@@ -381,36 +383,22 @@ class OverlayWindow(QWidget):
         if self._locked:
             self._apply_click_through()
 
-    # --- Data reload -------------------------------------------------------
-    def reload_keymap(self, keymap: dict) -> None:
-        previous_id = (
-            self.current_character.get("id") if self.current_character else None
-        )
-        self.keymap = keymap
-        self.characters = keymap.get("characters", [])
+    # --- Drag & drop (target) ---------------------------------------------
+    def dragEnterEvent(self, event) -> None:
+        if event.mimeData().hasFormat(ROW_MIME_TYPE):
+            event.acceptProposedAction()
 
-        # Update the character list (rebuilds the dropdown).
-        self.character_combo.blockSignals(True)
-        self.character_combo.clear()
-        self.character_combo.addItems([c.get("name", "?") for c in self.characters])
-        self.character_combo.blockSignals(False)
+    def dragMoveEvent(self, event) -> None:
+        if event.mimeData().hasFormat(ROW_MIME_TYPE):
+            event.acceptProposedAction()
 
-        # Update dropdown/title visibility.
-        self._set_selector_mode()
+    def dropEvent(self, event) -> None:
+        if event.mimeData().hasFormat(ROW_MIME_TYPE):
+            row_id = bytes(event.mimeData().data(ROW_MIME_TYPE)).decode("utf-8")
+            self.row_dropped.emit(row_id)
+            event.acceptProposedAction()
 
-        # Restore the previously selected character by id.
-        index = 0
-        if previous_id:
-            for i, c in enumerate(self.characters):
-                if c.get("id") == previous_id:
-                    index = i
-                    break
-        self.character_combo.setCurrentIndex(index)
-        self._on_character_changed(index)
-        if self._locked:
-            self._apply_click_through()
-
-    # --- Dragging ----------------------------------------------------------
+    # --- Dragging the window ----------------------------------------------
     # Dragging is started only from the DragHandle in the top-left. Pressing the
     # handle emits drag_started, which calls _start_drag, grabs the mouse to the
     # window and lets subsequent move/release events be handled by the window.

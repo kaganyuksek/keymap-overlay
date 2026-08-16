@@ -66,6 +66,11 @@ UNLOCKED_COLOR = (120, 220, 120)
 DRAG_HANDLE_SIZE = 22
 DRAG_HANDLE_COLOR = (120, 120, 140)
 
+# --- Multi-window ---------------------------------------------------------
+EMPTY_WINDOW_MIN_ROWS = 3
+ROW_HEIGHT_ESTIMATE = 30
+ROW_MIME_TYPE = "application/x-keymap-row"
+
 # --- System tray ----------------------------------------------------------
 APP_TITLE = "Keymap Overlay"
 TRAY_ICON_SIZE = 32
