@@ -28,6 +28,7 @@ class WindowManager(QObject):
 
         self._main_window = self._create_window(is_main=True)
         self._build_all_windows()
+        self._prune_empty_windows()
 
     # --- Window lifecycle --------------------------------------------------
     def _create_window(self, is_main: bool) -> OverlayWindow:
@@ -118,6 +119,7 @@ class WindowManager(QObject):
                     self.current_index = i
                     break
         self._build_all_windows()
+        self._prune_empty_windows()
         self._save()
 
     def move_row(self, row_id: str, target_win: OverlayWindow) -> None:
@@ -202,6 +204,24 @@ class WindowManager(QObject):
                 cleaned[0].append(rid)
         self.layout[char_id] = cleaned
         return cleaned, rows
+
+    def _window_is_empty(self, index: int) -> bool:
+        for layout in self.layout.values():
+            if index < len(layout) and layout[index]:
+                return False
+        return True
+
+    def _prune_empty_windows(self) -> None:
+        """Close extra windows that have no rows for any character."""
+        to_remove = [
+            i for i in range(1, len(self.windows)) if self._window_is_empty(i)
+        ]
+        for i in reversed(to_remove):
+            win = self.windows.pop(i)
+            win.deleteLater()
+            for layout in self.layout.values():
+                if i < len(layout):
+                    layout.pop(i)
 
     @staticmethod
     def _group_rows(rows: list) -> list:
