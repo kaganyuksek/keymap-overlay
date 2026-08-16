@@ -134,7 +134,9 @@ def main() -> int:
     menu = QMenu()
 
     show_action = menu.addAction("Show / Hide")
-    show_action.triggered.connect(window.setVisible)
+    show_action.triggered.connect(
+        lambda checked=False: window.setVisible(not window.isVisible())
+    )
 
     lock_action = menu.addAction("Lock (click-through)")
 
@@ -196,7 +198,19 @@ def main() -> int:
     # Import submenu listing discovered plugins (kept out of the main window).
     plugins = discover_plugins()
 
-    def run_import(plugin) -> None:
+    def run_import(plugin_id: str) -> None:
+        # Re-discover so edits to a plugin file take effect without a restart.
+        fresh = discover_plugins()
+        plugin = next(
+            (p for p in fresh if getattr(p, "PLUGIN_ID", "") == plugin_id), None
+        )
+        if plugin is None:
+            tray.showMessage(
+                APP_TITLE,
+                f"Plugin '{plugin_id}' not found",
+                QSystemTrayIcon.MessageIcon.Warning,
+            )
+            return
         try:
             data = plugin.import_keymap()
         except Exception as exc:
@@ -223,13 +237,15 @@ def main() -> int:
             name = getattr(plugin, "PLUGIN_NAME", plugin.PLUGIN_ID)
             action = import_menu.addAction(name)
             action.triggered.connect(
-                lambda checked=False, p=plugin: run_import(p)
+                lambda checked=False, pid=plugin.PLUGIN_ID: run_import(pid)
             )
 
         # Plugins flagged with AUTO_IMPORT run once the event loop starts.
         for plugin in plugins:
             if getattr(plugin, "AUTO_IMPORT", False):
-                QTimer.singleShot(0, lambda p=plugin: run_import(p))
+                QTimer.singleShot(
+                    0, lambda pid=plugin.PLUGIN_ID: run_import(pid)
+                )
 
     menu.addSeparator()
     quit_action = menu.addAction("Quit")
