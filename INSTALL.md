@@ -2,11 +2,14 @@
 
 ## Requirements
 
-- Linux (X11 or Wayland with XWayland)
 - Python 3 (3.9+)
-- `python3-venv` (usually included, otherwise install with your package manager)
+- Linux: X11 or Wayland with XWayland (and `python3-venv`, usually included)
+- Windows: Python 3 from [python.org](https://www.python.org/downloads/) with the
+  "Add Python to PATH" option ticked
 
-## Option A — Run with `run.sh` (recommended)
+## Linux
+
+### Option A — Run with `run.sh` (recommended)
 
 1. Clone the repository and enter it:
 
@@ -24,35 +27,51 @@
    The script creates a `.venv` virtual environment and installs PyQt6 on the
    first run. Every later run just launches the app.
 
-## Option B — Manual setup
+### Option B — Manual setup
 
-1. Create and activate a virtual environment:
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python main.py
+```
 
-   ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
+## Windows
+
+1. Install Python 3 from [python.org](https://www.python.org/downloads/) and
+   tick **Add Python to PATH**.
+2. Open a terminal (PowerShell or Command Prompt) in the project folder.
+3. Create and activate a virtual environment:
+
+   ```powershell
+   py -m venv .venv
+   .venv\Scripts\activate
    ```
 
-2. Install dependencies:
+4. Install dependencies and run:
 
-   ```bash
+   ```powershell
    pip install -r requirements.txt
-   ```
-
-3. Run:
-
-   ```bash
    python main.py
    ```
 
 ## Building a single-file executable
 
+Linux:
+
 ```bash
 ./build.sh
 ```
 
-This produces `dist/KeymapOverlay` using PyInstaller. Keep the `data/` and
-`assets/` folders next to the executable.
+Windows:
+
+```powershell
+pip install pyinstaller
+pyinstaller --noconfirm --onefile --windowed --name KeymapOverlay main.py
+```
+
+The executable is created in `dist/`. Keep the `data/` and `assets/` folders
+next to the executable.
 
 ## Usage
 
