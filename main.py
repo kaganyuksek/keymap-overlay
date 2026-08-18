@@ -8,6 +8,7 @@ Keymap Overlay — entry point.
 
 import json
 import os
+import re
 import shutil
 import sys
 
@@ -19,7 +20,18 @@ if os.environ.get("XDG_SESSION_TYPE") == "wayland" and "QT_QPA_PLATFORM" not in 
 
 from PyQt6.QtCore import QFileSystemWatcher, Qt, QTimer
 from PyQt6.QtGui import QAction, QActionGroup, QColor, QIcon, QPainter, QPixmap
-from PyQt6.QtWidgets import QApplication, QInputDialog, QMenu, QSystemTrayIcon
+from PyQt6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QInputDialog,
+    QLineEdit,
+    QMenu,
+    QMessageBox,
+    QSystemTrayIcon,
+)
 
 from config.constants import (
     APP_TITLE,
@@ -189,25 +201,98 @@ def main() -> int:
     set_opacity(manager.opacity_percent())
 
     # Sticky Overlay submenu: show the overlay only when a checked app is focused.
-    active_windows_menu = menu.addMenu("Sticky Overlay")
+    sticky_menu = menu.addMenu("Sticky Overlay")
 
-    def rebuild_active_windows_menu() -> None:
-        active_windows_menu.clear()
-        windows = window_detector.list_windows()
-        if not windows:
-            action = active_windows_menu.addAction("No windows found")
-            action.setEnabled(False)
+    MATCH_MODES = [
+        ("Exact", "exact"),
+        ("Starts with", "startswith"),
+        ("Contains", "contains"),
+        ("Ends with", "endswith"),
+        ("Regex", "regex"),
+    ]
+
+    def on_add_custom_rule() -> None:
+        dialog = QDialog()
+        dialog.setWindowTitle("Add custom rule")
+        form = QFormLayout(dialog)
+
+        name_edit = QLineEdit()
+        pattern_edit = QLineEdit()
+        mode_combo = QComboBox()
+        for label, key in MATCH_MODES:
+            mode_combo.addItem(label, key)
+
+        form.addRow("Name:", name_edit)
+        form.addRow("Pattern:", pattern_edit)
+        form.addRow("Match mode:", mode_combo)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+
+        while True:
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            name = name_edit.text().strip()
+            pattern = pattern_edit.text().strip()
+            mode = mode_combo.currentData()
+            if not name or not pattern:
+                QMessageBox.warning(
+                    None, "Missing fields", "Name and pattern are required."
+                )
+                continue
+            if mode == "regex":
+                try:
+                    re.compile(pattern)
+                except re.error as exc:
+                    QMessageBox.warning(None, "Invalid regex", str(exc))
+                    continue
+            manager.add_custom_rule(name, pattern, mode)
             return
+
+    def rebuild_sticky_menu() -> None:
+        sticky_menu.clear()
+
+        windows = [
+            w for w in window_detector.list_windows()
+            if w["app"] != APP_TITLE
+        ]
+        if not windows and not manager.patterns and not manager.custom_rules:
+            empty = sticky_menu.addAction("No windows found")
+            empty.setEnabled(False)
+            return
+
         for w in windows:
             title = w["title"]
-            action = active_windows_menu.addAction(title)
+            action = sticky_menu.addAction(title)
             action.setCheckable(True)
-            action.setChecked(manager.is_window_title_checked(title))
+            action.setChecked(manager.is_pattern_active(title))
             action.triggered.connect(
-                lambda checked, t=title: manager.toggle_window_title(t)
+                lambda checked, t=title: manager.toggle_pattern(t)
             )
 
-    active_windows_menu.aboutToShow.connect(rebuild_active_windows_menu)
+        if manager.custom_rules:
+            sticky_menu.addSeparator()
+            for rule in manager.custom_rules:
+                name = rule["name"]
+                action = sticky_menu.addAction(name)
+                action.setCheckable(True)
+                action.setChecked(rule.get("enabled", True))
+                action.triggered.connect(
+                    lambda checked, n=name: manager.set_custom_rule_enabled(
+                        n, checked
+                    )
+                )
+
+        sticky_menu.addSeparator()
+        add_action = sticky_menu.addAction("Add custom rule...")
+        add_action.triggered.connect(on_add_custom_rule)
+
+    sticky_menu.aboutToShow.connect(rebuild_sticky_menu)
 
     # Import submenu listing discovered plugins (kept out of the main window).
     plugins = discover_plugins()

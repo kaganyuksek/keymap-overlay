@@ -45,12 +45,36 @@ def foreground_id():
     return None
 
 
+def foreground_app():
+    """Return the application class (WM_CLASS) of the focused window, or None."""
+    if sys.platform.startswith("linux"):
+        return _x11_foreground_app()
+    return None
+
+
 # --- Linux / X11 ----------------------------------------------------------
 
 _X_ERROR_HANDLER = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)
 _X_ERROR_HANDLER_REF = None
 _XLIB = None
 _DPY = None
+
+
+class _XWindowAttributes(ctypes.Structure):
+    _fields_ = [
+        ("x", ctypes.c_int), ("y", ctypes.c_int),
+        ("width", ctypes.c_int), ("height", ctypes.c_int),
+        ("border_width", ctypes.c_int), ("depth", ctypes.c_int),
+        ("visual", ctypes.c_void_p), ("root", ctypes.c_ulong),
+        ("class", ctypes.c_int), ("bit_gravity", ctypes.c_int),
+        ("win_gravity", ctypes.c_int), ("backing_store", ctypes.c_int),
+        ("backing_planes", ctypes.c_ulong), ("backing_pixel", ctypes.c_ulong),
+        ("save_under", ctypes.c_int), ("colormap", ctypes.c_ulong),
+        ("map_installed", ctypes.c_int), ("map_state", ctypes.c_int),
+        ("all_event_masks", ctypes.c_long), ("your_event_mask", ctypes.c_long),
+        ("do_not_propagate_mask", ctypes.c_long), ("override_redirect", ctypes.c_int),
+        ("screen", ctypes.c_void_p),
+    ]
 
 
 def _ignore_x_error(_display, _event):
@@ -88,6 +112,17 @@ def _x11():
     xlib.XFree.argtypes = [ctypes.c_void_p]
     xlib.XFetchName.restype = ctypes.c_int
     xlib.XFetchName.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.POINTER(ctypes.c_char_p)]
+    xlib.XQueryTree.restype = ctypes.c_int
+    xlib.XQueryTree.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_ulong,
+        ctypes.POINTER(ctypes.c_ulong),
+        ctypes.POINTER(ctypes.c_ulong),
+        ctypes.POINTER(ctypes.POINTER(ctypes.c_ulong)),
+        ctypes.POINTER(ctypes.c_uint),
+    ]
+    xlib.XGetWindowAttributes.restype = ctypes.c_int
+    xlib.XGetWindowAttributes.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_void_p]
 
     # Install an error handler so stale windows don't abort the process.
     xlib.XSetErrorHandler.restype = ctypes.c_void_p
@@ -166,19 +201,53 @@ def _x11_window_title(xlib, dpy, win):
     return ""
 
 
+def _x11_wm_class(xlib, dpy, win):
+    if not win:
+        return ""
+    atom = xlib.XInternAtom(dpy, b"WM_CLASS", 0)
+    raw = _x11_get_property(xlib, dpy, win, atom)
+    if isinstance(raw, bytes):
+        for part in raw.split(b"\x00")[1:]:
+            if part:
+                return part.decode("utf-8", errors="replace")
+    return ""
+
+
+def _x11_is_managed(xlib, dpy, win) -> bool:
+    wa = _XWindowAttributes()
+    if not xlib.XGetWindowAttributes(dpy, win, ctypes.byref(wa)):
+        return False
+    return wa.override_redirect == 0
+
+
 def _x11_list_windows():
     xlib, dpy = _x11()
     if not dpy:
         return []
     root = xlib.XDefaultRootWindow(dpy)
-    net_client_list = xlib.XInternAtom(dpy, b"_NET_CLIENT_LIST", 0)
-
-    ids = _x11_get_property(xlib, dpy, root, net_client_list) or []
+    root_ret = ctypes.c_ulong()
+    parent_ret = ctypes.c_ulong()
+    children = ctypes.POINTER(ctypes.c_ulong)()
+    nchildren = ctypes.c_uint()
     windows = []
-    for wid in ids:
-        title = _x11_window_title(xlib, dpy, wid)
-        if title.strip():
-            windows.append({"id": f"x11:{wid}", "title": title})
+    if xlib.XQueryTree(
+        dpy, root,
+        ctypes.byref(root_ret), ctypes.byref(parent_ret),
+        ctypes.byref(children), ctypes.byref(nchildren),
+    ):
+        for i in range(nchildren.value):
+            wid = children[i]
+            title = _x11_window_title(xlib, dpy, wid)
+            if not title.strip():
+                continue
+            app = _x11_wm_class(xlib, dpy, wid)
+            if not app:
+                continue
+            if not _x11_is_managed(xlib, dpy, wid):
+                continue
+            windows.append({"id": f"x11:{wid}", "title": title, "app": app})
+        if children:
+            xlib.XFree(children)
     return windows
 
 
@@ -206,6 +275,18 @@ def _x11_foreground_id():
     return int(ids[0])
 
 
+def _x11_foreground_app():
+    xlib, dpy = _x11()
+    if not dpy:
+        return None
+    root = xlib.XDefaultRootWindow(dpy)
+    net_active = xlib.XInternAtom(dpy, b"_NET_ACTIVE_WINDOW", 0)
+    ids = _x11_get_property(xlib, dpy, root, net_active)
+    if not ids:
+        return None
+    return _x11_wm_class(xlib, dpy, ids[0]) or None
+
+
 # --- Windows / Win32 ------------------------------------------------------
 
 def _win32_list_windows():
@@ -223,7 +304,7 @@ def _win32_list_windows():
                 user32.GetWindowTextW(hwnd, buf, length + 1)
                 title = buf.value.strip()
                 if title:
-                    results.append({"id": f"win:{hwnd}", "title": title})
+                    results.append({"id": f"win:{hwnd}", "title": title, "app": ""})
         return True
 
     user32.EnumWindows(proc(callback), 0)
