@@ -6,7 +6,7 @@ Overlay window.
 - "Locked/click-through" mode: on X11 the window input region is restricted to the
   lock button (main window) so the rest of the window passes clicks through while
   the lock button always remains clickable. Extra windows become fully click-through.
-- The main window holds the character selector, the lock button and a "+" button
+- The main window holds the profile selector, the lock button and a "+" button
   to create extra windows; extra windows hold a close button.
 - Content is a set of (group title, rows) sections; the window auto-sizes to its
   content (grows downward) instead of scrolling.
@@ -220,7 +220,7 @@ class DragHandle(QWidget):
 class OverlayWindow(QWidget):
     """Frameless, draggable, semi-transparent hotkey reference panel."""
 
-    character_changed = pyqtSignal(int)
+    profile_changed = pyqtSignal(int)
     create_window_requested = pyqtSignal()
     close_requested = pyqtSignal()
     row_dropped = pyqtSignal(str)
@@ -260,9 +260,9 @@ class OverlayWindow(QWidget):
         top_bar.addWidget(self.drag_handle, alignment=Qt.AlignmentFlag.AlignLeft)
 
         if self.is_main:
-            self.character_combo = QComboBox()
-            self.character_combo.currentIndexChanged.connect(self.character_changed.emit)
-            self.character_combo.setStyleSheet(
+            self.profile_combo = QComboBox()
+            self.profile_combo.currentIndexChanged.connect(self.profile_changed.emit)
+            self.profile_combo.setStyleSheet(
                 "QComboBox {"
                 " background-color: rgb(45, 45, 55);"
                 " color: rgb(240, 240, 240);"
@@ -277,7 +277,7 @@ class OverlayWindow(QWidget):
                 " selection-background-color: rgb(70, 70, 90);"
                 "}"
             )
-            top_bar.addWidget(self.character_combo, stretch=1)
+            top_bar.addWidget(self.profile_combo, stretch=1)
 
             self.add_button = self._make_icon_button("+", "New window")
             self.add_button.clicked.connect(self.create_window_requested.emit)
@@ -326,15 +326,15 @@ class OverlayWindow(QWidget):
         # Defer so the widgets are polished and size hints are correct.
         QTimer.singleShot(0, self._autosize)
 
-    def set_characters(self, names, current_index: int) -> None:
-        """Update the character selector (main window only)."""
+    def set_profiles(self, names, current_index: int) -> None:
+        """Update the profile selector (main window only)."""
         if not self.is_main:
             return
-        self.character_combo.blockSignals(True)
-        self.character_combo.clear()
-        self.character_combo.addItems(names)
-        self.character_combo.setCurrentIndex(current_index)
-        self.character_combo.blockSignals(False)
+        self.profile_combo.blockSignals(True)
+        self.profile_combo.clear()
+        self.profile_combo.addItems(names)
+        self.profile_combo.setCurrentIndex(current_index)
+        self.profile_combo.blockSignals(False)
 
     def _autosize(self) -> None:
         self.layout().activate()

@@ -21,7 +21,7 @@ PLUGIN_ID = "my_game"
 PLUGIN_NAME = "My Game"
 
 def import_keymap():
-    return {"characters": [...]}
+    return {"profiles": [...]}
 ```
 
 Optional:
@@ -34,10 +34,10 @@ Optional:
 
 ```json
 {
-  "characters": [
+  "profiles": [
     {
       "id": "char1",
-      "name": "Character 1",
+      "name": "Profile 1",
       "groups": [
         { "title": "Combat", "hotkeys": [ { "key": "F1", "label": "Attack", "icon": null } ] }
       ]
@@ -57,7 +57,7 @@ PLUGIN_ID = "example"
 PLUGIN_NAME = "Example Importer"
 
 def import_keymap():
-    characters = []
+    profiles = []
     for profile in sorted(Path.home().glob(".example/*.json")):
         data = json.loads(profile.read_text())
         groups = [
@@ -68,12 +68,12 @@ def import_keymap():
             }
             for title, items in data["groups"].items()
         ]
-        characters.append({
+        profiles.append({
             "id": data["id"],
             "name": data["name"],
             "groups": groups,
         })
-    return {"characters": characters}
+    return {"profiles": profiles}
 ```
 
 ## Notes

@@ -15,7 +15,7 @@ Built with Python 3 and PyQt6.
   clickable) while the lock button itself remains usable to unlock.
 - System tray icon to show/hide, lock/unlock, adjust opacity and quit.
 - Adjustable background opacity, persisted in `data/settings.json`.
-- Multiple characters/groups loaded from `data/keymap.json` (created from
+- Multiple profiles/groups loaded from `data/keymap.json` (created from
   `data/keymap.example.json` on first run).
 - Multiple overlay windows: split hotkey rows across several windows with
   drag & drop. Each window auto-sizes to its content; the layout is persisted
@@ -33,7 +33,7 @@ Built with Python 3 and PyQt6.
 
 <img src="docs/screenshot.png" alt="Keymap Overlay" width="520">
 
-The main window (left) shows the character dropdown, the lock button and the
+The main window (left) shows the profile dropdown, the lock button and the
 "+ new window" button; hotkey rows can be dragged into extra windows (right).
 Each window auto-sizes to its content and has a move handle (top-left) to
 reposition it.
@@ -57,10 +57,10 @@ created from the example at `data/keymap.example.json`:
 
 ```json
 {
-  "characters": [
+  "profiles": [
     {
       "id": "char1",
-      "name": "Character 1",
+      "name": "Profile 1",
       "groups": [
         {
           "title": "Combat",
@@ -75,7 +75,7 @@ created from the example at `data/keymap.example.json`:
 }
 ```
 
-- Each character has its own groups; groups are rendered as titled blocks.
+- Each profile has its own groups; groups are rendered as titled blocks.
 - `icon` may be `null` (or point to a missing file) — the row then shows only
   the key badge and the label.
 - Icons are looked up in `assets/icons/`.

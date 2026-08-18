@@ -61,9 +61,15 @@ def load_keymap() -> dict:
     """Read keymap.json; return an empty structure on failure."""
     try:
         with open(KEYMAP_PATH, encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
     except (OSError, json.JSONDecodeError):
-        return {"characters": []}
+        return {"profiles": []}
+    # Backward compatibility: accept the old "characters" key.
+    if "profiles" not in data and "characters" in data:
+        data = dict(data)
+        data["profiles"] = data.pop("characters")
+    data.setdefault("profiles", [])
+    return data
 
 
 def load_settings() -> dict:
@@ -334,7 +340,18 @@ def main() -> int:
                 QSystemTrayIcon.MessageIcon.Warning,
             )
             return
-        if not isinstance(data, dict) or "characters" not in data:
+        if not isinstance(data, dict):
+            tray.showMessage(
+                APP_TITLE,
+                "Import returned invalid data",
+                QSystemTrayIcon.MessageIcon.Warning,
+            )
+            return
+        # Accept both "profiles" and the legacy "characters" key.
+        if "profiles" not in data and "characters" in data:
+            data = dict(data)
+            data["profiles"] = data.pop("characters")
+        if "profiles" not in data:
             tray.showMessage(
                 APP_TITLE,
                 "Import returned invalid data",
@@ -342,8 +359,8 @@ def main() -> int:
             )
             return
         write_keymap(data)
-        count = len(data.get("characters", []))
-        tray.showMessage(APP_TITLE, f"Imported {count} characters")
+        count = len(data.get("profiles", []))
+        tray.showMessage(APP_TITLE, f"Imported {count} profiles")
 
     if plugins:
         import_menu = menu.addMenu("Import")

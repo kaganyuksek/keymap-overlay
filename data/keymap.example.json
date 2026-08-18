@@ -1,8 +1,8 @@
 {
-  "characters": [
+  "profiles": [
     {
-      "id": "char1",
-      "name": "Character 1",
+      "id": "profile1",
+      "name": "Profile 1",
       "groups": [
         {
           "title": "Combat",
@@ -29,8 +29,8 @@
       ]
     },
     {
-      "id": "char2",
-      "name": "Character 2",
+      "id": "profile2",
+      "name": "Profile 2",
       "groups": [
         {
           "title": "Spells",

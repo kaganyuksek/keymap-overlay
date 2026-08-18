@@ -11,7 +11,7 @@ A plugin must expose:
 
     PLUGIN_ID        str   - unique identifier
     PLUGIN_NAME      str   - display name shown in the tray menu
-    import_keymap()  -> dict  - returns {"characters": [...]}
+    import_keymap()  -> dict  - returns {"profiles": [...]}
 
 Optional:
 

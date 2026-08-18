@@ -21,12 +21,12 @@ class WindowManager(QObject):
     def __init__(self, keymap: dict, settings: dict, save_callback=None) -> None:
         super().__init__()
         self.keymap = keymap
-        self.characters = keymap.get("characters", [])
+        self.profiles = keymap.get("profiles", [])
         self.settings = settings
         self.save_callback = save_callback
         self.layout = settings.get("window_layout", {})
         self.windows = []
-        self.current_index = self._find_character_index(
+        self.current_index = self._find_profile_index(
             settings.get("selected_profile") or settings.get("selected_character")
         )
         self._locked = False
@@ -61,7 +61,7 @@ class WindowManager(QObject):
         win.set_opacity_percent(self._opacity)
         win.set_locked(self._locked)
         if is_main:
-            win.character_changed.connect(self.set_character)
+            win.profile_changed.connect(self.set_profile)
             win.create_window_requested.connect(self.create_window)
             win.lock_toggled.connect(self.set_locked)
         else:
@@ -82,9 +82,9 @@ class WindowManager(QObject):
         self._create_window(is_main=False)
         # Register an (empty) slot for this window in the current profile so
         # it becomes active/visible instead of being hidden.
-        if self.characters and 0 <= self.current_index < len(self.characters):
-            char_id = self.characters[self.current_index].get("id", "?")
-            self._layout_for_char(char_id).append([])
+        if self.profiles and 0 <= self.current_index < len(self.profiles):
+            profile_id = self.profiles[self.current_index].get("id", "?")
+            self._layout_for_profile(profile_id).append([])
         self._build_all_windows()
         self._save()
 
@@ -92,7 +92,7 @@ class WindowManager(QObject):
         if win is self._main_window or win not in self.windows:
             return
         idx = self.windows.index(win)
-        # Move its rows back to the main window for every character.
+        # Move its rows back to the main window for every profile.
         for layout in self.layout.values():
             if idx < len(layout):
                 moved = layout.pop(idx)
@@ -212,10 +212,10 @@ class WindowManager(QObject):
         return self._any_matches(self._foreground_title)
 
     def _active_window_count(self) -> int:
-        if not self.characters or self.current_index >= len(self.characters):
+        if not self.profiles or self.current_index >= len(self.profiles):
             return 1
-        char_id = self.characters[self.current_index].get("id", "?")
-        return max(1, len(self.layout.get(char_id, [])))
+        profile_id = self.profiles[self.current_index].get("id", "?")
+        return max(1, len(self.layout.get(profile_id, [])))
 
     def _set_all_visible(self, visible: bool) -> None:
         count = self._active_window_count()
@@ -259,21 +259,21 @@ class WindowManager(QObject):
         self._save()
 
     def _restore_positions(self) -> None:
-        if not self.characters or self.current_index >= len(self.characters):
+        if not self.profiles or self.current_index >= len(self.profiles):
             return
-        char_id = self.characters[self.current_index].get("id", "?")
-        positions = self.settings.get("window_positions", {}).get(char_id, [])
+        profile_id = self.profiles[self.current_index].get("id", "?")
+        positions = self.settings.get("window_positions", {}).get(profile_id, [])
         for i, pos in enumerate(positions):
             if i < len(self.windows):
                 self.windows[i].move(pos[0], pos[1])
 
     def _save_positions(self) -> None:
-        if not self.characters or self.current_index >= len(self.characters):
+        if not self.profiles or self.current_index >= len(self.profiles):
             return
-        char_id = self.characters[self.current_index].get("id", "?")
+        profile_id = self.profiles[self.current_index].get("id", "?")
         count = self._active_window_count()
         positions = self.settings.setdefault("window_positions", {})
-        positions[char_id] = [
+        positions[profile_id] = [
             [w.pos().x(), w.pos().y()] for w in self.windows[:count]
         ]
 
@@ -301,28 +301,28 @@ class WindowManager(QObject):
         self._save()
 
     # --- Data / layout -----------------------------------------------------
-    def set_character(self, index: int) -> None:
-        if 0 <= index < len(self.characters):
+    def set_profile(self, index: int) -> None:
+        if 0 <= index < len(self.profiles):
             self.current_index = index
         self._build_all_windows()
         self._save()
 
     def reload_keymap(self, keymap: dict) -> None:
         previous_id = None
-        if self.characters and 0 <= self.current_index < len(self.characters):
-            previous_id = self.characters[self.current_index].get("id")
+        if self.profiles and 0 <= self.current_index < len(self.profiles):
+            previous_id = self.profiles[self.current_index].get("id")
         self.keymap = keymap
-        self.characters = keymap.get("characters", [])
-        self.current_index = self._find_character_index(previous_id)
+        self.profiles = keymap.get("profiles", [])
+        self.current_index = self._find_profile_index(previous_id)
         self._build_all_windows()
         self._prune_empty_windows()
         self._save()
 
     def move_row(self, row_id: str, target_win: OverlayWindow) -> None:
-        if not self.characters or target_win not in self.windows:
+        if not self.profiles or target_win not in self.windows:
             return
-        char_id = self.characters[self.current_index].get("id", "?")
-        layout = self._layout_for_char(char_id)
+        profile_id = self.profiles[self.current_index].get("id", "?")
+        layout = self._layout_for_profile(profile_id)
         target_index = self.windows.index(target_win)
         while len(layout) <= target_index:
             layout.append([])
@@ -341,17 +341,17 @@ class WindowManager(QObject):
         QTimer.singleShot(0, self._build_all_windows)
 
     def _build_all_windows(self) -> None:
-        names = [c.get("name", "?") for c in self.characters]
-        if not self.characters:
-            self._main_window.set_characters([], 0)
+        names = [c.get("name", "?") for c in self.profiles]
+        if not self.profiles:
+            self._main_window.set_profiles([], 0)
             for win in self.windows:
                 win.set_sections([])
             self._refresh_visibility(immediate=True)
             return
-        char = self.characters[self.current_index]
-        layout, rows = self._reconcile(char)
+        profile = self.profiles[self.current_index]
+        layout, rows = self._reconcile(profile)
         row_map = {r["id"]: r for r in rows}
-        self._main_window.set_characters(names, self.current_index)
+        self._main_window.set_profiles(names, self.current_index)
         while len(self.windows) < len(layout):
             self._create_window(is_main=False)
         for i, win in enumerate(self.windows):
@@ -362,22 +362,22 @@ class WindowManager(QObject):
         self._refresh_visibility(immediate=True)
 
     # --- Helpers -----------------------------------------------------------
-    def _find_character_index(self, char_id) -> int:
-        if char_id:
-            for i, c in enumerate(self.characters):
-                if c.get("id") == char_id:
+    def _find_profile_index(self, profile_id) -> int:
+        if profile_id:
+            for i, c in enumerate(self.profiles):
+                if c.get("id") == profile_id:
                     return i
         return 0
 
-    def _rows_for_character(self, char: dict) -> list:
+    def _rows_for_profile(self, profile: dict) -> list:
         rows = []
-        char_id = char.get("id", "?")
-        for group in char.get("groups", []):
+        profile_id = profile.get("id", "?")
+        for group in profile.get("groups", []):
             group_title = group.get("title", "")
             for hk in group.get("hotkeys", []):
                 rows.append(
                     {
-                        "id": f"{char_id}||{group_title}||{hk.get('key', '')}",
+                        "id": f"{profile_id}||{group_title}||{hk.get('key', '')}",
                         "group": group_title,
                         "key": hk.get("key", ""),
                         "label": hk.get("label", ""),
@@ -386,17 +386,17 @@ class WindowManager(QObject):
                 )
         return rows
 
-    def _layout_for_char(self, char_id: str) -> list:
-        if char_id not in self.layout:
-            self.layout[char_id] = [[]]
-        return self.layout[char_id]
+    def _layout_for_profile(self, profile_id: str) -> list:
+        if profile_id not in self.layout:
+            self.layout[profile_id] = [[]]
+        return self.layout[profile_id]
 
-    def _reconcile(self, char: dict) -> tuple[list, list]:
-        char_id = char.get("id", "?")
-        rows = self._rows_for_character(char)
+    def _reconcile(self, profile: dict) -> tuple[list, list]:
+        profile_id = profile.get("id", "?")
+        rows = self._rows_for_profile(profile)
         ids = [r["id"] for r in rows]
         id_set = set(ids)
-        layout = self._layout_for_char(char_id)
+        layout = self._layout_for_profile(profile_id)
         cleaned = [[rid for rid in win_ids if rid in id_set] for win_ids in layout]
         assigned = set()
         for win_ids in cleaned:
@@ -404,7 +404,7 @@ class WindowManager(QObject):
         for rid in ids:
             if rid not in assigned:
                 cleaned[0].append(rid)
-        self.layout[char_id] = cleaned
+        self.layout[profile_id] = cleaned
         return cleaned, rows
 
     def _window_is_empty(self, index: int) -> bool:
@@ -414,7 +414,7 @@ class WindowManager(QObject):
         return True
 
     def _prune_empty_windows(self) -> None:
-        """Close extra windows that have no rows for any character."""
+        """Close extra windows that have no rows for any profile."""
         to_remove = [
             i for i in range(1, len(self.windows)) if self._window_is_empty(i)
         ]
@@ -447,8 +447,8 @@ class WindowManager(QObject):
             self.settings["active_windows"] = sorted(self.patterns)
             self.settings["custom_rules"] = self.custom_rules
             self._save_positions()
-            if self.characters and 0 <= self.current_index < len(self.characters):
+            if self.profiles and 0 <= self.current_index < len(self.profiles):
                 self.settings["selected_profile"] = (
-                    self.characters[self.current_index].get("id")
+                    self.profiles[self.current_index].get("id")
                 )
             self.save_callback(self.settings)
