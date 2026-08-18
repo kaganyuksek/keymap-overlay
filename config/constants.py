@@ -66,6 +66,15 @@ UNLOCKED_COLOR = (120, 220, 120)
 DRAG_HANDLE_SIZE = 22
 DRAG_HANDLE_COLOR = (120, 120, 140)
 
+# --- Resize handle --------------------------------------------------------
+# Vertical grab strip on the right edge shown while the overlay is unlocked.
+RESIZE_HANDLE_WIDTH = 8
+
+# Minimum width of a group column. Set to the default content width so the
+# overlay keeps its current single-column look at the minimum window width and
+# flows into extra columns only when the window is widened.
+GROUP_MIN_WIDTH = WINDOW_WIDTH - 2 * PANEL_PADDING
+
 # --- Multi-window ---------------------------------------------------------
 EMPTY_WINDOW_MIN_ROWS = 3
 ROW_HEIGHT_ESTIMATE = 30

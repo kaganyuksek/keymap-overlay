@@ -11,7 +11,12 @@ from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 from PyQt6.QtGui import QGuiApplication
 
 import window_detector
-from config.constants import FOCUS_HIDE_DELAY_MS, WINDOW_POS_X, WINDOW_POS_Y
+from config.constants import (
+    FOCUS_HIDE_DELAY_MS,
+    WINDOW_POS_X,
+    WINDOW_POS_Y,
+    WINDOW_WIDTH,
+)
 from ui.overlay_window import OverlayWindow
 
 
@@ -252,10 +257,12 @@ class WindowManager(QObject):
             return
         geo = screen.availableGeometry()
         for i, win in enumerate(self.windows):
+            win.set_width(WINDOW_WIDTH)
             x = geo.x() + (geo.width() - win.width()) // 2
             y = geo.y() + (geo.height() - win.height()) // 2
             win.move(x + i * 40, y + i * 40)
         self.settings["window_positions"] = {}
+        self.settings["window_widths"] = {}
         self._save()
 
     def _restore_positions(self) -> None:
@@ -267,6 +274,15 @@ class WindowManager(QObject):
             if i < len(self.windows):
                 self.windows[i].move(pos[0], pos[1])
 
+    def _restore_widths(self) -> None:
+        if not self.profiles or self.current_index >= len(self.profiles):
+            return
+        profile_id = self.profiles[self.current_index].get("id", "?")
+        widths = self.settings.get("window_widths", {}).get(profile_id, [])
+        for i, w in enumerate(widths):
+            if i < len(self.windows) and w:
+                self.windows[i].set_width(w)
+
     def _save_positions(self) -> None:
         if not self.profiles or self.current_index >= len(self.profiles):
             return
@@ -276,6 +292,14 @@ class WindowManager(QObject):
         positions[profile_id] = [
             [w.pos().x(), w.pos().y()] for w in self.windows[:count]
         ]
+
+    def _save_widths(self) -> None:
+        if not self.profiles or self.current_index >= len(self.profiles):
+            return
+        profile_id = self.profiles[self.current_index].get("id", "?")
+        count = self._active_window_count()
+        widths = self.settings.setdefault("window_widths", {})
+        widths[profile_id] = [w.width() for w in self.windows[:count]]
 
     # --- Lock / opacity (global) ------------------------------------------
     def is_locked(self) -> bool:
@@ -359,6 +383,7 @@ class WindowManager(QObject):
                 win_rows = [row_map[rid] for rid in layout[i] if rid in row_map]
                 win.set_sections(self._group_rows(win_rows))
         self._restore_positions()
+        self._restore_widths()
         self._refresh_visibility(immediate=True)
 
     # --- Helpers -----------------------------------------------------------
@@ -447,6 +472,7 @@ class WindowManager(QObject):
             self.settings["active_windows"] = sorted(self.patterns)
             self.settings["custom_rules"] = self.custom_rules
             self._save_positions()
+            self._save_widths()
             if self.profiles and 0 <= self.current_index < len(self.profiles):
                 self.settings["selected_profile"] = (
                     self.profiles[self.current_index].get("id")

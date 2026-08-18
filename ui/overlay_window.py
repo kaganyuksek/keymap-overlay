@@ -14,7 +14,7 @@ Overlay window.
 
 import ctypes
 
-from PyQt6.QtCore import QPoint, QPointF, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QPoint, QPointF, QRectF, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QGuiApplication, QPainter, QPen, QPolygonF
 from PyQt6.QtWidgets import (
     QComboBox,
@@ -35,6 +35,7 @@ from config.constants import (
     LOCK_BUTTON_SIZE,
     LOCKED_COLOR,
     PANEL_PADDING,
+    RESIZE_HANDLE_WIDTH,
     ROW_HEIGHT_ESTIMATE,
     ROW_MIME_TYPE,
     TEXT_COLOR,
@@ -45,6 +46,7 @@ from config.constants import (
     WINDOW_WIDTH,
     rgb,
 )
+from ui.flow_layout import FlowLayout
 from ui.group_widget import GroupWidget
 
 
@@ -217,6 +219,35 @@ class DragHandle(QWidget):
         painter.end()
 
 
+class ResizeHandle(QWidget):
+    """Vertical grab strip on the right edge used to resize the width."""
+
+    resize_started = pyqtSignal(QPoint)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setCursor(Qt.CursorShape.SizeHorCursor)
+        self.setToolTip("Resize width")
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.resize_started.emit(event.globalPosition().toPoint())
+        event.accept()
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setBrush(QColor(*DRAG_HANDLE_COLOR))
+        painter.setPen(Qt.PenStyle.NoPen)
+
+        w = 3
+        h = min(44, self.height() - 8)
+        x = (self.width() - w) / 2.0
+        y = (self.height() - h) / 2.0
+        painter.drawRoundedRect(QRectF(x, y, w, h), 1.5, 1.5)
+        painter.end()
+
+
 class OverlayWindow(QWidget):
     """Frameless, draggable, semi-transparent hotkey reference panel."""
 
@@ -232,6 +263,8 @@ class OverlayWindow(QWidget):
         self.is_main = is_main
         self._locked = False
         self._drag_offset = None
+        self._resize_origin = None
+        self._width = WINDOW_WIDTH
         self._background_alpha = BACKGROUND_ALPHA
 
         self._build_ui()
@@ -295,10 +328,12 @@ class OverlayWindow(QWidget):
         outer.addLayout(top_bar)
         self.top_bar_layout = top_bar
 
-        self.content_layout = QVBoxLayout()
-        self.content_layout.setContentsMargins(0, 0, 0, 0)
-        self.content_layout.setSpacing(GROUP_SPACING)
+        self.content_layout = FlowLayout(spacing=GROUP_SPACING)
         outer.addLayout(self.content_layout, stretch=1)
+
+        self.resize_handle = ResizeHandle(self)
+        self.resize_handle.resize_started.connect(self._start_resize)
+        self.resize_handle.setVisible(False)
 
     def _make_icon_button(self, text: str, tooltip: str) -> QToolButton:
         button = QToolButton()
@@ -322,7 +357,6 @@ class OverlayWindow(QWidget):
                 widget.deleteLater()
         for title, rows in sections:
             self.content_layout.addWidget(GroupWidget(title, rows))
-        self.content_layout.addStretch(1)
         # Defer so the widgets are polished and size hints are correct.
         QTimer.singleShot(0, self._autosize)
 
@@ -337,12 +371,32 @@ class OverlayWindow(QWidget):
         self.profile_combo.blockSignals(False)
 
     def _autosize(self) -> None:
-        self.layout().activate()
-        height = self.sizeHint().height()
+        self._relayout()
+
+    def _relayout(self) -> None:
+        """Resize the window to `_width` and fit the height to the flow content."""
+        self._width = max(WINDOW_WIDTH, self._width)
         top_h = self.top_bar_layout.sizeHint().height()
+        inner_w = max(1, self._width - 2 * PANEL_PADDING)
+        content_h = self.content_layout.heightForWidth(inner_w)
         min_content = EMPTY_WINDOW_MIN_ROWS * ROW_HEIGHT_ESTIMATE
         min_height = PANEL_PADDING * 2 + top_h + GROUP_SPACING + min_content
-        self.resize(WINDOW_WIDTH, max(height, min_height))
+        total_h = PANEL_PADDING * 2 + top_h + GROUP_SPACING + content_h
+        self.resize(self._width, max(total_h, min_height))
+        self._position_resize_handle()
+
+    def set_width(self, width: int) -> None:
+        self._width = max(WINDOW_WIDTH, int(width))
+        self._relayout()
+
+    def _position_resize_handle(self) -> None:
+        self.resize_handle.setGeometry(
+            self.width() - RESIZE_HANDLE_WIDTH,
+            0,
+            RESIZE_HANDLE_WIDTH,
+            self.height(),
+        )
+        self.resize_handle.raise_()
 
     # --- Lock / click-through ----------------------------------------------
     def is_locked(self) -> bool:
@@ -355,6 +409,7 @@ class OverlayWindow(QWidget):
         self._locked = locked
         if self.is_main:
             self.lock_button.set_locked(locked)
+        self.resize_handle.setVisible(not locked)
         self._apply_click_through()
 
     def toggle_lock(self) -> None:
@@ -396,8 +451,10 @@ class OverlayWindow(QWidget):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        if self._locked:
-            self._apply_click_through()
+        self._position_resize_handle()
+        # Keep the X11 input region in sync with the new size (whole window when
+        # unlocked, lock button only when locked).
+        self._apply_click_through()
 
     # --- Drag & drop (target) ---------------------------------------------
     def dragEnterEvent(self, event) -> None:
@@ -432,13 +489,37 @@ class OverlayWindow(QWidget):
         self.releaseMouse()
         self.position_changed.emit()
 
+    def _start_resize(self, global_pos) -> None:
+        self._resize_origin = (global_pos.x(), self._width)
+        self.grabMouse()
+
+    def _move_resize(self, global_pos) -> None:
+        if self._resize_origin is None:
+            return
+        start_x, start_width = self._resize_origin
+        self._width = max(WINDOW_WIDTH, start_width + (global_pos.x() - start_x))
+        self._relayout()
+
+    def _end_resize(self) -> None:
+        self._resize_origin = None
+        self.releaseMouse()
+        self.position_changed.emit()
+
     def mouseMoveEvent(self, event) -> None:
         if self._drag_offset is not None and event.buttons() & Qt.MouseButton.LeftButton:
             self._move_drag(event.globalPosition().toPoint())
             event.accept()
+        elif self._resize_origin is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            self._move_resize(event.globalPosition().toPoint())
+            event.accept()
+        else:
+            event.ignore()
 
     def mouseReleaseEvent(self, event) -> None:
-        self._end_drag()
+        if self._drag_offset is not None:
+            self._end_drag()
+        if self._resize_origin is not None:
+            self._end_resize()
 
     # --- Background painting -----------------------------------------------
     def paintEvent(self, event) -> None:

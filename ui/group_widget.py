@@ -11,6 +11,7 @@ from config.constants import (
     FONT_FAMILY,
     FONT_SIZE_GROUP_HEADER,
     GROUP_HEADER_COLOR,
+    GROUP_MIN_WIDTH,
     ROW_SPACING,
     rgb,
 )
@@ -20,6 +21,7 @@ from ui.hotkey_row_widget import HotkeyRowWidget
 class GroupWidget(QWidget):
     def __init__(self, title: str, hotkeys: list, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setMinimumWidth(GROUP_MIN_WIDTH)
         self._build(title, hotkeys)
 
     def _build(self, title: str, hotkeys: list) -> None:
