@@ -254,6 +254,17 @@ def main() -> int:
             manager.add_custom_rule(name, pattern, mode)
             return
 
+    def on_remove_custom_rule() -> None:
+        names = [r["name"] for r in manager.custom_rules]
+        if not names:
+            QMessageBox.information(None, "No rules", "No custom rules to remove.")
+            return
+        name, ok = QInputDialog.getItem(
+            None, "Remove custom rule", "Rule:", names, 0, False
+        )
+        if ok and name:
+            manager.remove_custom_rule(name)
+
     def rebuild_sticky_menu() -> None:
         sticky_menu.clear()
 
@@ -291,6 +302,10 @@ def main() -> int:
         sticky_menu.addSeparator()
         add_action = sticky_menu.addAction("Add custom rule...")
         add_action.triggered.connect(on_add_custom_rule)
+
+        if manager.custom_rules:
+            remove_action = sticky_menu.addAction("Remove custom rule...")
+            remove_action.triggered.connect(on_remove_custom_rule)
 
     sticky_menu.aboutToShow.connect(rebuild_sticky_menu)
 
