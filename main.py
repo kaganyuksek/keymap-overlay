@@ -36,6 +36,7 @@ from PyQt6.QtWidgets import (
 from config.constants import (
     APP_TITLE,
     BACKGROUND_COLOR,
+    DATA_DIR,
     KEYMAP_EXAMPLE_PATH,
     KEYMAP_PATH,
     SETTINGS_PATH,
@@ -50,7 +51,13 @@ from plugin_loader import discover_plugins
 
 def ensure_keymap() -> None:
     """Copy the example keymap to keymap.json on first run if it is missing."""
-    if not KEYMAP_PATH.exists() and KEYMAP_EXAMPLE_PATH.exists():
+    if KEYMAP_PATH.exists():
+        return
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return
+    if KEYMAP_EXAMPLE_PATH.exists():
         try:
             shutil.copyfile(KEYMAP_EXAMPLE_PATH, KEYMAP_PATH)
         except OSError:
@@ -84,6 +91,7 @@ def load_settings() -> dict:
 def save_settings(settings: dict) -> None:
     """Persist settings to settings.json (best effort)."""
     try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
         with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
             json.dump(settings, f, indent=2)
     except OSError:
@@ -94,6 +102,7 @@ def write_keymap(data: dict) -> None:
     """Write keymap.json atomically (best effort)."""
     tmp = KEYMAP_PATH.with_suffix(".tmp")
     try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
         os.replace(tmp, KEYMAP_PATH)
@@ -134,6 +143,8 @@ def main() -> int:
     settings = load_settings()
 
     ensure_keymap()
+    if not SETTINGS_PATH.exists():
+        save_settings(settings)
     manager = WindowManager(load_keymap(), settings, save_callback=save_settings)
 
     # Some WMs ignore the stay-on-top hint; periodically raise the windows to

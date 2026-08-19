@@ -11,15 +11,18 @@ from pathlib import Path
 
 # --- Paths ----------------------------------------------------------------
 # Project root: config/constants.py -> config/ -> project root.
-# When bundled with PyInstaller (frozen), data files are placed next to the
-# executable, so the executable's directory is used as the root.
+# When bundled with PyInstaller (frozen), writable data (keymap/settings) is
+# stored next to the executable, while read-only bundled resources (the
+# example keymap) are unpacked into the temp dir exposed via sys._MEIPASS.
 if getattr(sys, "frozen", False):
     PROJECT_ROOT = Path(sys.executable).resolve().parent
+    BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", PROJECT_ROOT))
 else:
     PROJECT_ROOT = Path(__file__).resolve().parent.parent
+    BUNDLE_DIR = PROJECT_ROOT
 DATA_DIR = PROJECT_ROOT / "data"
 KEYMAP_PATH = DATA_DIR / "keymap.json"
-KEYMAP_EXAMPLE_PATH = DATA_DIR / "keymap.example.json"
+KEYMAP_EXAMPLE_PATH = BUNDLE_DIR / "data" / "keymap.example.json"
 SETTINGS_PATH = DATA_DIR / "settings.json"
 ICONS_DIR = PROJECT_ROOT / "assets" / "icons"
 PLUGINS_DIR = PROJECT_ROOT / "plugins"

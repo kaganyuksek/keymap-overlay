@@ -16,8 +16,9 @@ fi
     --onefile \
     --windowed \
     --name KeymapOverlay \
+    --add-data "data/keymap.example.json:data" \
     main.py
 
 echo
 echo "Built: dist/KeymapOverlay"
-echo "Remember to copy data/ and assets/ next to the executable."
+echo "On first run it creates data/ (keymap.json, settings.json) next to the executable."
