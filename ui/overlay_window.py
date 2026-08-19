@@ -281,8 +281,11 @@ class OverlayWindow(QWidget):
 
         self._build_ui()
 
+        # Tool windows are excluded from the taskbar and Alt+Tab switcher.
         self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAcceptDrops(True)
