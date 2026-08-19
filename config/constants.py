@@ -70,10 +70,16 @@ DRAG_HANDLE_COLOR = (120, 120, 140)
 # Vertical grab strip on the right edge shown while the overlay is unlocked.
 RESIZE_HANDLE_WIDTH = 8
 
-# Minimum width of a group column. Set to the default content width so the
-# overlay keeps its current single-column look at the minimum window width and
-# flows into extra columns only when the window is widened.
-GROUP_MIN_WIDTH = WINDOW_WIDTH - 2 * PANEL_PADDING
+# --- Group column flow ----------------------------------------------------
+# As the overlay is widened, hotkey rows re-flow into extra columns instead of
+# staying in one long column. A column never holds fewer than this many rows,
+# so rows split 2-by-2 (e.g. 5 rows -> columns of 2 + 2 + 1) rather than 1-by-1.
+MIN_ROWS_PER_COLUMN = 2
+# Minimum width of a hotkey-row column. Used as a floor for the measured row
+# width and to estimate how many columns fit across the window at a given width.
+ROW_COLUMN_WIDTH = 170
+# Horizontal gap between the row columns.
+COLUMN_SPACING = 24
 
 # --- Multi-window ---------------------------------------------------------
 EMPTY_WINDOW_MIN_ROWS = 3

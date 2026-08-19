@@ -1,8 +1,8 @@
 """
 Flow layout: lays items left-to-right and wraps onto new rows.
 
-Used for the overlay content so hotkey groups re-flow into columns as the
-window is widened horizontally.
+Used for the overlay content so hotkey columns re-flow as the window is
+widened horizontally.
 """
 
 from PyQt6.QtCore import QPoint, QRect, QSize, Qt
@@ -64,18 +64,17 @@ class FlowLayout(QLayout):
         y = effective.y()
         line_height = 0
         spacing = self.spacing()
+        right_edge = effective.x() + effective.width()
 
         for item in self._items:
             hint = item.sizeHint()
-            next_x = x + hint.width() + spacing
-            if next_x - spacing > effective.right() and line_height > 0:
+            if x + hint.width() > right_edge and line_height > 0:
                 x = effective.x()
                 y = y + line_height + spacing
-                next_x = x + hint.width() + spacing
                 line_height = 0
             if not test_only:
                 item.setGeometry(QRect(QPoint(x, y), hint))
-            x = next_x
+            x = x + hint.width() + spacing
             line_height = max(line_height, hint.height())
 
         return y + line_height - rect.y() + m.bottom()

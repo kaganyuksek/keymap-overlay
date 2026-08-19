@@ -13,9 +13,10 @@ Overlay window.
 """
 
 import ctypes
+import math
 
 from PyQt6.QtCore import QPoint, QPointF, QRectF, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QGuiApplication, QPainter, QPen, QPolygonF
+from PyQt6.QtGui import QColor, QFont, QFontMetrics, QGuiApplication, QPainter, QPen, QPolygonF
 from PyQt6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -27,15 +28,23 @@ from PyQt6.QtWidgets import (
 from config.constants import (
     BACKGROUND_ALPHA,
     BACKGROUND_COLOR,
+    COLUMN_SPACING,
     CORNER_RADIUS,
     DRAG_HANDLE_COLOR,
     DRAG_HANDLE_SIZE,
     EMPTY_WINDOW_MIN_ROWS,
+    FONT_FAMILY,
+    FONT_SIZE_HOTKEY,
+    FONT_SIZE_KEY,
     GROUP_SPACING,
+    ICON_SIZE,
+    ICON_TEXT_SPACING,
     LOCK_BUTTON_SIZE,
     LOCKED_COLOR,
+    MIN_ROWS_PER_COLUMN,
     PANEL_PADDING,
     RESIZE_HANDLE_WIDTH,
+    ROW_COLUMN_WIDTH,
     ROW_HEIGHT_ESTIMATE,
     ROW_MIME_TYPE,
     TEXT_COLOR,
@@ -265,6 +274,9 @@ class OverlayWindow(QWidget):
         self._drag_offset = None
         self._resize_origin = None
         self._width = WINDOW_WIDTH
+        self._sections = []
+        self._total_cols = None
+        self._columns = []
         self._background_alpha = BACKGROUND_ALPHA
 
         self._build_ui()
@@ -328,7 +340,7 @@ class OverlayWindow(QWidget):
         outer.addLayout(top_bar)
         self.top_bar_layout = top_bar
 
-        self.content_layout = FlowLayout(spacing=GROUP_SPACING)
+        self.content_layout = FlowLayout(spacing=COLUMN_SPACING)
         outer.addLayout(self.content_layout, stretch=1)
 
         self.resize_handle = ResizeHandle(self)
@@ -349,14 +361,9 @@ class OverlayWindow(QWidget):
 
     # --- Content -----------------------------------------------------------
     def set_sections(self, sections) -> None:
-        """Render the given (group title, rows) sections and auto-size."""
-        while self.content_layout.count():
-            item = self.content_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
-        for title, rows in sections:
-            self.content_layout.addWidget(GroupWidget(title, rows))
+        """Store the given (group title, rows) sections and re-render."""
+        self._sections = sections
+        self._total_cols = None
         # Defer so the widgets are polished and size hints are correct.
         QTimer.singleShot(0, self._autosize)
 
@@ -370,12 +377,99 @@ class OverlayWindow(QWidget):
         self.profile_combo.setCurrentIndex(current_index)
         self.profile_combo.blockSignals(False)
 
-    def _autosize(self) -> None:
-        self._relayout()
+    def _clear_content(self) -> None:
+        while self.content_layout.count():
+            item = self.content_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
 
-    def _relayout(self) -> None:
-        """Resize the window to `_width` and fit the height to the flow content."""
-        self._width = max(WINDOW_WIDTH, self._width)
+    def _column_width(self) -> int:
+        """Estimate the natural width of the widest hotkey row."""
+        key_font = QFont(FONT_FAMILY, FONT_SIZE_KEY)
+        key_font.setBold(True)
+        label_font = QFont(FONT_FAMILY, FONT_SIZE_HOTKEY)
+        key_fm = QFontMetrics(key_font)
+        label_fm = QFontMetrics(label_font)
+        max_w = 0
+        for _, rows in self._sections:
+            for r in rows:
+                icon_w = ICON_SIZE + ICON_TEXT_SPACING if r.get("icon") else 0
+                badge_w = max(
+                    ICON_SIZE * 2,
+                    key_fm.horizontalAdvance(str(r.get("key", ""))) + 8,
+                )
+                label_w = label_fm.horizontalAdvance(str(r.get("label", "")))
+                max_w = max(max_w, icon_w + badge_w + ICON_TEXT_SPACING + label_w)
+        return max(ROW_COLUMN_WIDTH, max_w)
+
+    def _cols_fit(self) -> int:
+        inner_w = max(1, self._width - 2 * PANEL_PADDING)
+        col_w = self._column_width()
+        return max(1, (inner_w + COLUMN_SPACING) // (col_w + COLUMN_SPACING))
+
+    def _distribute_columns(self, counts: list) -> list:
+        """Assign columns to categories, prioritizing categories side by side.
+
+        Each category gets at least one column (so categories sit next to each
+        other first); leftover columns are handed out proportionally to row
+        counts. The total is capped so every column holds at least
+        MIN_ROWS_PER_COLUMN rows.
+        """
+        n = len(counts)
+        if n == 0:
+            return []
+        total = sum(counts)
+        cols_fit = self._cols_fit()
+        max_cols = max(1, (total + MIN_ROWS_PER_COLUMN - 1) // MIN_ROWS_PER_COLUMN)
+        cols = min(cols_fit, max_cols)
+        if cols <= n or total == 0:
+            return [1] * n
+        remaining = cols - n
+        frac = [c * remaining / total for c in counts]
+        floors = [int(f) for f in frac]
+        extra = remaining - sum(floors)
+        order = sorted(range(n), key=lambda i: frac[i] - floors[i], reverse=True)
+        for i in order[:extra]:
+            floors[i] += 1
+        return [1 + floors[i] for i in range(n)]
+
+    def _fill_width(self, total_cols: int) -> int:
+        cols_per_line = min(total_cols, self._cols_fit())
+        inner_w = max(1, self._width - 2 * PANEL_PADDING)
+        return max(1, (inner_w - (cols_per_line - 1) * COLUMN_SPACING) // cols_per_line)
+
+    def _rebuild_content(self) -> None:
+        self._clear_content()
+        self._columns = []
+        counts = [len(rows) for _, rows in self._sections]
+        cols_per_cat = self._distribute_columns(counts)
+        total_cols = max(1, sum(cols_per_cat))
+        fill_w = self._fill_width(total_cols)
+        for ci, (title, rows) in enumerate(self._sections):
+            g = len(rows)
+            c = cols_per_cat[ci]
+            per = math.ceil(g / c) if g > 0 and c > 0 else 0
+            first = True
+            if not rows:
+                col = GroupWidget(title, [], show_header=True, min_width=fill_w)
+                self.content_layout.addWidget(col)
+                self._columns.append(col)
+                continue
+            for i in range(0, g, per):
+                chunk = rows[i:i + per]
+                col = GroupWidget(title, chunk, show_header=first, min_width=fill_w)
+                self.content_layout.addWidget(col)
+                self._columns.append(col)
+                first = False
+
+    def _apply_fill_width(self) -> None:
+        fill_w = self._fill_width(self._total_cols)
+        for col in self._columns:
+            col.setMinimumWidth(fill_w)
+        self.content_layout.invalidate()
+
+    def _resize_to_fit(self) -> None:
         top_h = self.top_bar_layout.sizeHint().height()
         inner_w = max(1, self._width - 2 * PANEL_PADDING)
         content_h = self.content_layout.heightForWidth(inner_w)
@@ -384,6 +478,23 @@ class OverlayWindow(QWidget):
         total_h = PANEL_PADDING * 2 + top_h + GROUP_SPACING + content_h
         self.resize(self._width, max(total_h, min_height))
         self._position_resize_handle()
+
+    def _autosize(self) -> None:
+        self._relayout()
+
+    def _relayout(self) -> None:
+        """Re-flow the content for the current width and fit the height."""
+        self._width = max(WINDOW_WIDTH, self._width)
+        counts = [len(rows) for _, rows in self._sections]
+        total_cols = max(1, sum(self._distribute_columns(counts)))
+        if total_cols != self._total_cols:
+            self._total_cols = total_cols
+            self._rebuild_content()
+        else:
+            self._apply_fill_width()
+        # Defer the resize: freshly built widgets have no valid size hints yet,
+        # so fitting synchronously would size the window incorrectly.
+        QTimer.singleShot(0, self._resize_to_fit)
 
     def set_width(self, width: int) -> None:
         self._width = max(WINDOW_WIDTH, int(width))
@@ -452,9 +563,9 @@ class OverlayWindow(QWidget):
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._position_resize_handle()
-        # Keep the X11 input region in sync with the new size (whole window when
-        # unlocked, lock button only when locked).
-        self._apply_click_through()
+        if self._locked:
+            # Keep the click-through region (lock button only) in sync.
+            self._apply_click_through()
 
     # --- Drag & drop (target) ---------------------------------------------
     def dragEnterEvent(self, event) -> None:
@@ -503,6 +614,7 @@ class OverlayWindow(QWidget):
     def _end_resize(self) -> None:
         self._resize_origin = None
         self.releaseMouse()
+        self._apply_click_through()
         self.position_changed.emit()
 
     def mouseMoveEvent(self, event) -> None:
